@@ -122,9 +122,8 @@ const STATE = {
 const VENDOR = { "anthropic":"bg-orange-100 text-orange-700", "openai":"bg-emerald-100 text-emerald-700",
   "google":"bg-violet-100 text-violet-700", "gold":"bg-amber-100 text-amber-700",
   "red":"bg-rose-100 text-rose-700", "other":"bg-slate-100 text-slate-600" };
-// Optional highlight of the agent NAME (left column), e.g. OpenClaw red, Hermes gold.
-const NAME_COLOR = { "red":"text-rose-600 font-semibold", "gold":"text-amber-600 font-semibold",
-  "green":"text-emerald-600 font-semibold", "blue":"text-sky-600 font-semibold" };
+// Optional background highlight behind the agent NAME (like the model tags), text stays normal.
+const NAME_BG = { "red":"bg-rose-100", "gold":"bg-amber-100", "green":"bg-emerald-100", "blue":"bg-sky-100" };
 function fmtDuration(s){if(s==null)return "–";const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);
   return d?`${d}d ${h}h`:h?`${h}h ${m}m`:`${m}m`;}
 function fmtTime(u){return u?new Date(u*1000).toLocaleString():"";}
@@ -173,9 +172,10 @@ function renderAgents(root, agents){
     const ok=a.alive; const stDot=ok?"bg-emerald-500":"bg-slate-300"; const stTxt=ok?"Running":"Idle";
     const stCls=ok?"text-slate-600":"text-slate-400";
     const tr=document.createElement("tr"); tr.className="border-b border-slate-100 last:border-0";
-    const nameCls=NAME_COLOR[a.name_color]||"text-slate-700";
+    const nameBg=NAME_BG[a.name_color];
+    const nameCell=nameBg?`<span class="inline-block rounded px-1.5 py-0.5 ${nameBg}">${esc(a.name)}</span>`:esc(a.name);
     tr.innerHTML=
-      `<td class="px-3 py-1.5 font-medium whitespace-nowrap ${nameCls}">${esc(a.name)}</td>`+
+      `<td class="px-3 py-1.5 font-medium text-slate-700 whitespace-nowrap">${nameCell}</td>`+
       `<td class="px-3 py-1.5 whitespace-nowrap"><span class="inline-block rounded px-1.5 py-0.5 text-[11px] font-medium ${tcls}">${esc(a.label)}</span></td>`+
       `<td class="px-3 py-1.5">${sid}</td>`+
       `<td class="px-3 py-1.5 text-slate-500 text-xs whitespace-nowrap">${a.age!=null?"ago "+fmtDuration(a.age):"–"}</td>`+
