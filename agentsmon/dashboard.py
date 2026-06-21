@@ -127,6 +127,7 @@ const NAME_BG = { "red":"bg-rose-100", "gold":"bg-amber-100", "green":"bg-emeral
 function fmtDuration(s){if(s==null)return "–";const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);
   return d?`${d}d ${h}h`:h?`${h}h ${m}m`:`${m}m`;}
 function fmtTime(u){return u?new Date(u*1000).toLocaleString():"";}
+function fmtLat(ms){return ms==null?"–":(ms<1?"<1 ms":ms+" ms");}
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const q=(r,s)=>r.querySelector(s);
 
@@ -158,7 +159,7 @@ function renderService(root, s){
     q(root,".m-x-sub").textContent="live in tmux";
   }else{
     q(root,".m-x-label").textContent="Latency";
-    q(root,".m-x").textContent=s.latency_ms!=null?s.latency_ms+" ms":"–";
+    q(root,".m-x").textContent=fmtLat(s.latency_ms);
     q(root,".m-x-sub").textContent=s.metric_sub||"health check";
   }
   renderTimeline(root, s.timeline, s.timeline_days);
@@ -179,19 +180,19 @@ function renderAgents(root, agents){
     const tip=a.resume_cmd?`↻ ${a.resume_cmd} — click to copy`:(a.session_id||"no resume");
     const sid=a.session_id?`<span class="sid font-mono text-xs text-slate-600 whitespace-nowrap cursor-pointer hover:text-sky-600" title="${esc(tip)}" data-copy="${esc(copy)}">${esc(a.session_id)}</span>`
       :`<span class="text-xs text-slate-300 cursor-help" title="${esc(tip)}">— none</span>`;
-    const ok=a.alive; const stDot=ok?"bg-emerald-500":"bg-slate-300"; const stTxt=ok?"Running":"Idle";
+    const ok=a.alive; const dot=ok?"bg-emerald-500":"bg-slate-300";
+    // A daemon with a health endpoint shows its latency in place of Running/Idle.
+    const statusTxt=(a.latency_ms!=null&&ok)?fmtLat(a.latency_ms):(ok?"Running":"Idle");
     const stCls=ok?"text-slate-600":"text-slate-400";
     const tr=document.createElement("tr"); tr.className="border-b border-slate-100 last:border-0";
     const nameBg=NAME_BG[a.name_color];
     const nameCell=nameBg?`<span class="inline-block rounded px-1.5 py-0.5 ${nameBg}">${esc(a.name)}</span>`:esc(a.name);
-    const orchBadge=a.orchestrator?` <span class="ml-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold bg-indigo-100 text-indigo-700 align-middle">🧭 Orchestrator</span>`:"";
-    if(a.orchestrator) tr.className+=" bg-indigo-50";
     tr.innerHTML=
-      `<td class="px-3 py-1.5 font-medium text-slate-700 whitespace-nowrap">${nameCell}${orchBadge}</td>`+
+      `<td class="px-3 py-1.5 font-medium text-slate-700 whitespace-nowrap">${nameCell}</td>`+
       `<td class="px-3 py-1.5 whitespace-nowrap"><span class="inline-block rounded px-1.5 py-0.5 text-[11px] font-medium ${tcls}">${esc(a.label)}</span></td>`+
       `<td class="px-3 py-1.5">${sid}</td>`+
       `<td class="px-3 py-1.5 text-slate-500 text-xs whitespace-nowrap">${a.age!=null?"ago "+fmtDuration(a.age):"–"}</td>`+
-      `<td class="px-3 py-1.5"><span class="inline-flex items-center gap-1.5 whitespace-nowrap ${stCls}"><span class="h-2 w-2 rounded-full ${stDot} shrink-0"></span>${stTxt}</span></td>`;
+      `<td class="px-3 py-1.5"><span class="inline-flex items-center gap-1.5 whitespace-nowrap ${stCls}"><span class="h-2 w-2 rounded-full ${dot} shrink-0"></span>${statusTxt}</span></td>`;
     tb.appendChild(tr);
   });
 }
@@ -270,14 +271,7 @@ def _agents_state(cfg: dict) -> list[dict]:
             a["vendor"] = ov["vendor"]
         if ov.get("restart"):
             a["resume_cmd"] = ov["restart"]
-    agents = detect.pinned_agents(cfg.get("pinned_daemons", [])) + tmux
-    orch = cfg.get("orchestrator")
-    if orch:
-        for a in agents:
-            if a["name"] == orch:
-                a["orchestrator"] = True
-        agents.sort(key=lambda a: not a.get("orchestrator"))   # orchestrator first (stable)
-    return agents
+    return detect.pinned_agents(cfg.get("pinned_daemons", [])) + tmux
 
 
 def _state() -> bytes:

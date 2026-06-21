@@ -73,7 +73,9 @@ def _proc_age(pid: int) -> int | None:
 
 
 def pinned_agents(pinned: list[dict]) -> list[dict]:
-    """Non-tmux processes (OpenClaw, Hermes, …) shown at the top of the agents table."""
+    """Non-tmux processes (OpenClaw, Hermes, …) shown at the top of the agents table. If a daemon
+    has a ``health_url`` we measure its warm round-trip latency, shown in place of the status."""
+    from . import probe
     out = []
     for d in pinned:
         pat = d.get("process", "")
@@ -81,10 +83,14 @@ def pinned_agents(pinned: list[dict]) -> list[dict]:
         pids = [int(x) for x in r.stdout.split()] if (r and r.returncode == 0) else []
         ages = [a for a in (_proc_age(p) for p in pids) if a is not None]
         age = max(ages) if ages else None    # oldest matching process = how long the service has been up
+        lat = None
+        if d.get("health_url") and pids:
+            ok, secs = probe._http(d["health_url"], timeout=2)
+            lat = round(secs * 1000) if secs is not None else None
         out.append({
             "name": d.get("name"), "kind": "daemon", "label": d.get("tag", d.get("name")),
             "vendor": d.get("vendor"), "name_color": d.get("name_color"),
-            "session_id": None, "alive": bool(pids), "age": age,
+            "session_id": None, "alive": bool(pids), "age": age, "latency_ms": lat,
         })
     return out
 
