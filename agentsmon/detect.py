@@ -220,13 +220,38 @@ def _codex_session_for_cwd(cwd: str) -> str | None:
     return _codex_info_for_cwd(cwd)[0]
 
 
-def _claude_session_for_cwd(cwd: str) -> str | None:
-    """Find the Claude Code session whose recorded cwd matches → session UUID. A freshly launched
-    `claude` (no ``--resume`` on its command line) has no id to read from argv, so we resolve it
-    from ~/.claude/projects/ — the newest transcript whose ``cwd`` matches this session's dir."""
+def _pretty_claude_model(raw: str) -> str:
+    """``claude-opus-4-8`` → ``Opus 4.8`` (family + version); unknown ids returned as-is."""
+    m = re.match(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d+))?", raw or "")
+    if not m:
+        return raw
+    ver = m.group(2) + (f".{m.group(3)}" if m.group(3) else "")
+    return f"{m.group(1).capitalize()} {ver}"
+
+
+def _claude_model_from_transcript(path: str) -> str | None:
+    """The model a Claude Code session is actually running, from the tail of its transcript (each
+    assistant turn records ``message.model``); we take the latest real one, ignoring synthetic."""
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as fh:
+            if size > 65536:
+                fh.seek(size - 65536)
+            data = fh.read().decode("utf-8", "ignore")
+    except OSError:
+        return None
+    for m in reversed(re.findall(r'"model"\s*:\s*"([^"]+)"', data)):
+        if m and m != "<synthetic>":
+            return _pretty_claude_model(m)
+    return None
+
+
+def _claude_info_for_cwd(cwd: str) -> tuple[str | None, str | None]:
+    """A freshly launched `claude` has no ``--resume`` id on argv, so resolve its session UUID
+    (and concrete model) from ~/.claude/projects/ — the newest transcript whose ``cwd`` matches."""
     base = Path.home() / ".claude" / "projects"
     if not cwd or not base.is_dir():
-        return None
+        return None, None
     target = os.path.realpath(cwd)
     files = glob.glob(str(base / "**" / "*.jsonl"), recursive=True)
     files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
@@ -243,8 +268,33 @@ def _claude_session_for_cwd(cwd: str) -> str | None:
                 continue
             if c and os.path.realpath(c) == target:
                 m = UUID_RE.search(os.path.basename(f))
-                return m.group(0) if m else Path(f).stem
-    return None
+                sid = m.group(0) if m else Path(f).stem
+                return sid, _claude_model_from_transcript(f)
+    return None, None
+
+
+def _antigravity_model() -> str | None:
+    """Antigravity (agy) records its selected model in ~/.gemini/antigravity-cli/settings.json."""
+    try:
+        d = json.loads((Path.home() / ".gemini" / "antigravity-cli" / "settings.json").read_text("utf-8"))
+        return d.get("model") or None
+    except (OSError, ValueError):
+        return None
+
+
+def _antigravity_info_for_cwd(cwd: str) -> tuple[str | None, str | None]:
+    """(conversation id, model) for an Antigravity session. A fresh `agy` has no ``--conversation``
+    id on argv; it maps the current workspace → conversation in cache/last_conversations.json."""
+    sid = None
+    try:
+        cache = Path.home() / ".gemini" / "antigravity-cli" / "cache" / "last_conversations.json"
+        mapping = json.loads(cache.read_text("utf-8"))
+        if cwd:
+            target = os.path.realpath(cwd)
+            sid = next((v for k, v in mapping.items() if os.path.realpath(k) == target), None)
+    except (OSError, ValueError):
+        pass
+    return sid, _antigravity_model()
 
 
 def _classify(cmds: list[str], extra_matches: list[tuple]) -> tuple[str, str, str | None]:
@@ -363,12 +413,22 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
             model = rmodel or codex_model
             if model:
                 label = model
-        # Claude Code: a fresh `claude` has no id on its command line — resolve it by cwd so the
-        # session id (and a working --resume) still show up.
-        if kind == "claude-code" and sid is None:
+        # Claude Code / Antigravity: a fresh launch has no id on argv — resolve the session id AND
+        # the concrete model by cwd, so both show up (just like Codex does).
+        if kind == "claude-code":
             cwd = _session_cwd(s["name"])
-            if cwd:
-                sid = _claude_session_for_cwd(cwd)
+            csid, cmodel = _claude_info_for_cwd(cwd) if cwd else (None, None)
+            if sid is None:
+                sid = csid
+            if cmodel:
+                label = cmodel
+        elif kind == "antigravity":
+            cwd = _session_cwd(s["name"])
+            asid, amodel = _antigravity_info_for_cwd(cwd) if cwd else (None, None)
+            if sid is None:
+                sid = asid
+            if amodel:
+                label = amodel
         age = int(now - s["created"]) if s["created"] else None
         resume = RESUME_TEMPLATES.get(kind, "").format(id=sid) if (sid and kind in RESUME_TEMPLATES) else None
         agents.append({
