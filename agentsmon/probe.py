@@ -7,9 +7,10 @@ open builds the history — no separate probe service required.
 """
 from __future__ import annotations
 
+import http.client
 import subprocess
 import time
-import urllib.request
+import urllib.parse
 
 from . import db
 
@@ -21,12 +22,31 @@ def _proc_up(pattern: str) -> bool:
 
 
 def _http(url: str, timeout: float = 4) -> tuple[bool, float | None]:
-    t0 = time.time()
+    """Health check returning (ok, **warm** round-trip latency). We do a warm-up request to
+    establish the TCP+TLS connection, then time a second request on the same connection — so the
+    reported latency is the server's actual response time, not the one-off handshake cost (which
+    for a remote HTTPS endpoint can be ~55 ms and would otherwise dwarf the real latency)."""
+    p = urllib.parse.urlparse(url)
+    path = (p.path or "/") + (f"?{p.query}" if p.query else "")
+    cls = http.client.HTTPSConnection if p.scheme == "https" else http.client.HTTPConnection
+    conn = None
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as r:
-            return (200 <= r.status < 400), round(time.time() - t0, 3)
+        conn = cls(p.hostname, p.port, timeout=timeout)
+        conn.request("GET", path)          # warm-up: TCP + TLS handshake happens here
+        conn.getresponse().read()
+        t0 = time.time()                   # timed request reuses the established connection
+        conn.request("GET", path)
+        r = conn.getresponse()
+        r.read()
+        return (200 <= r.status < 400), round(time.time() - t0, 3)
     except Exception:
         return False, None
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def probe_once(cfg: dict) -> None:
