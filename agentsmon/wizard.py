@@ -52,6 +52,7 @@ def primary_ip() -> str:
         return "127.0.0.1"
 COMMON_DAEMONS = [
     {"name": "OpenClaw", "pattern": "openclaw", "binary": "openclaw", "name_color": "red",
+     "service_name": "Multi-Agent System Availability",
      "health_url": "http://127.0.0.1:18789/health",
      "restart": "nohup openclaw gateway > ~/openclaw.log 2>&1 &"},
     {"name": "Hermes", "pattern": "hermes.* gateway", "binary": "hermes", "name_color": "gold",
@@ -151,7 +152,9 @@ def _daemon_entries(d: dict) -> tuple:
     """(keepalive daemon, pinned Persistent-Agents row, availability service) for a daemon."""
     daemon = dict(d)
     pinned = {"name": d["name"], "process": d["pattern"]}
-    service = {"name": d["name"], "process": d["pattern"]}
+    # The availability card can have its own title (e.g. OpenClaw → "Multi-Agent System
+    # Availability") while the agents-table row keeps the short daemon name.
+    service = {"name": d.get("service_name", d["name"]), "process": d["pattern"]}
     if d.get("health_url"):
         pinned["health_url"] = d["health_url"]
         service["health_url"] = d["health_url"]
