@@ -87,9 +87,14 @@ def pinned_agents(pinned: list[dict]) -> list[dict]:
         if d.get("health_url") and pids:
             ok, secs = probe._http(d["health_url"], timeout=2)
             lat = round(secs * 1000) if secs is not None else None
+        # Concrete model detected LIVE (so it stays current without rebuilding config); an
+        # explicit config tag/vendor still wins if set.
+        model = daemon_model(d.get("name", ""))
         out.append({
-            "name": d.get("name"), "kind": "daemon", "label": d.get("tag", d.get("name")),
-            "vendor": d.get("vendor"), "name_color": d.get("name_color"),
+            "name": d.get("name"), "kind": "daemon",
+            "label": d.get("tag") or model or d.get("name"),
+            "vendor": d.get("vendor") or vendor_for_model(model),
+            "name_color": d.get("name_color"),
             "session_id": None, "alive": bool(pids), "age": age, "latency_ms": lat,
             "health_url": d.get("health_url"),
         })
@@ -248,12 +253,38 @@ def _codex_model() -> str | None:
 
 
 def _openclaw_model() -> str | None:
+    """OpenClaw's model from openclaw.json. The key may be a string ('model': 'openai/gpt-5.5')
+    or an object ('model': {'primary': 'openai/gpt-5.5'}) — parse JSON and handle both, with a
+    recursive fallback to any model-looking string under model/primary/name keys."""
     try:
-        txt = (Path.home() / ".openclaw" / "openclaw.json").read_text(encoding="utf-8")
-    except OSError:
+        d = json.loads((Path.home() / ".openclaw" / "openclaw.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
         return None
-    m = re.search(r'"model"\s*:\s*"([A-Za-z0-9._/-]+)"', txt)
-    return _pretty_model(m.group(1)) if m else None
+    m = d.get("model")
+    if isinstance(m, str):
+        return _pretty_model(m)
+    if isinstance(m, dict):
+        for k in ("primary", "name", "default", "model"):
+            if isinstance(m.get(k), str):
+                return _pretty_model(m[k])
+
+    def _looks_like_model(v):
+        return isinstance(v, str) and ("/" in v or any(
+            x in v.lower() for x in ("gpt", "claude", "gemini", "opus", "sonnet", "haiku")))
+
+    found = []
+
+    def walk(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if k in ("primary", "model", "name") and _looks_like_model(v):
+                    found.append(v)
+                walk(v)
+        elif isinstance(o, list):
+            for x in o:
+                walk(x)
+    walk(d)
+    return _pretty_model(found[0]) if found else None
 
 
 def daemon_model(name: str) -> str | None:
