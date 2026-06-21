@@ -188,17 +188,31 @@ def _codex_session_for_cwd(cwd: str) -> str | None:
 
 def _classify(cmds: list[str], extra_matches: list[tuple]) -> tuple[str, str, str | None]:
     """Given the command lines in a session's process tree, return (kind, label, session_id).
-    User-supplied (kind,label,pattern) tuples are tried first, then the built-ins."""
+    Built-in agents are matched FIRST so we get the real kind (and its maker colour); the
+    user-supplied matches are only a fallback for agents we don't recognise out of the box."""
     for cmd in cmds:
-        for kind, label, pat in extra_matches:
-            if pat.search(cmd):
-                sid = UUID_RE.search(cmd)
-                return kind, label, (sid.group(0) if sid else None)
         for kind, label, pat in KNOWN_AGENTS:
             if pat.search(cmd):
                 sid = UUID_RE.search(cmd)
                 return kind, label, (sid.group(0) if sid else None)
+        for kind, label, pat in extra_matches:
+            if pat.search(cmd):
+                sid = UUID_RE.search(cmd)
+                return kind, label, (sid.group(0) if sid else None)
     return "shell", "shell (idle)", None
+
+
+def _codex_model() -> str | None:
+    """Best-effort concrete model for Codex, from ~/.codex/config.toml (e.g. 'GPT-5.5')."""
+    try:
+        txt = (Path.home() / ".codex" / "config.toml").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = re.search(r'(?m)^\s*model\s*=\s*["\']?([A-Za-z0-9._-]+)', txt)
+    if not m:
+        return None
+    model = m.group(1)
+    return model.upper() if model[:1].lower() in ("g", "o") else model
 
 
 def discover_agents(extra_matches: list[tuple] | None = None, now: float | None = None) -> list[dict]:
@@ -206,6 +220,7 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
     now = now or time.time()
     extra_matches = extra_matches or []
     procs, children = _proc_table()
+    codex_model = _codex_model()
     agents = []
     for s in tmux_sessions():
         pids = _pane_pids(s["name"])
@@ -214,6 +229,8 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
         # Prefer non-shell commands when classifying.
         ranked = sorted(cmds, key=lambda c: c.split()[0].rsplit("/", 1)[-1] in SHELLS)
         kind, label, sid = _classify(ranked, extra_matches)
+        if kind == "codex" and codex_model:
+            label = codex_model                 # show the concrete model (e.g. GPT-5.5) when known
         # A fresh interactive agent has no id on its command line — resolve it from its session
         # storage by matching the tmux pane's working directory (currently Codex).
         if sid is None and kind == "codex":
