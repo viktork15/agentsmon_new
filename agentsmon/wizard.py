@@ -65,35 +65,38 @@ def _running(pattern: str) -> bool:
 
 
 def _bridge_restart_cmd() -> str | None:
-    """Capture the running Agent2Telegram bridge's exact command line → a nohup restart command,
-    so keepalive can bring it back (e.g. after a reboot)."""
+    """Capture the running Agent2Telegram bridge → a nohup restart command. Critically we also
+    capture the env it relies on (PYTHONPATH for a run-from-clone install, AGENT2TELEGRAM_CONFIG)
+    from /proc/<pid>/environ — the command line alone misses those, so the restart would fail
+    with 'No module named agent2telegram' after a reboot."""
     out = subprocess.run(["pgrep", "-af", "agent2telegram run"], capture_output=True, text=True)
     for line in out.stdout.splitlines():
         parts = line.split(None, 1)
-        if len(parts) == 2 and "agent2telegram run" in parts[1]:
-            log = "$HOME/.local/state/agentsmon/bridge.log"
-            return f"nohup {parts[1]} >> {log} 2>&1 &"
+        if len(parts) != 2 or "agent2telegram run" not in parts[1]:
+            continue
+        pid, cmd = parts[0], parts[1]
+        env_prefix = ""
+        try:
+            raw = Path(f"/proc/{pid}/environ").read_text("utf-8").split("\0")
+            envd = dict(e.split("=", 1) for e in raw if "=" in e)
+            for k in ("PYTHONPATH", "AGENT2TELEGRAM_CONFIG"):
+                if envd.get(k):
+                    env_prefix += f'{k}="{envd[k]}" '
+        except (OSError, ValueError):
+            pass
+        log = "$HOME/.local/state/agentsmon/bridge.log"
+        return f"nohup {env_prefix}{cmd} >> {log} 2>&1 &"
     return None
 
 
 def _telegram_bridge_service() -> dict | None:
     """If an Agent2Telegram bridge is running, build a 'Telegram Bridge Status' availability card.
-    Latency = a round-trip to the Telegram API (getMe) using the bridge's bot token, if we can
-    read it from the bridge config."""
+    Latency = round-trip to the Telegram API. We deliberately probe a **token-less** endpoint so
+    no bot token is ever written into this tool's config (it would leak via greps/screenshots)."""
     if not _running("agent2telegram run"):
         return None
-    import glob
-    import json
-    svc = {"name": "Telegram Bridge Status", "process": "agent2telegram run"}
-    for cfgpath in sorted(glob.glob(str(Path.home() / ".config" / "agent2telegram" / "*.json"))):
-        try:
-            tok = json.loads(Path(cfgpath).read_text("utf-8")).get("token")
-        except (OSError, ValueError):
-            continue
-        if tok:
-            svc["health_url"] = f"https://api.telegram.org/bot{tok}/getMe"
-            break
-    return svc
+    return {"name": "Telegram Bridge Status", "process": "agent2telegram run",
+            "health_url": "https://api.telegram.org/"}
 
 
 def _parse_selection(text: str, n: int) -> set:
