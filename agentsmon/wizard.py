@@ -51,11 +51,32 @@ def primary_ip() -> str:
     except Exception:
         return "127.0.0.1"
 COMMON_DAEMONS = [
-    {"name": "OpenClaw", "pattern": "openclaw", "health_url": "http://127.0.0.1:18789/health",
+    {"name": "OpenClaw", "pattern": "openclaw", "binary": "openclaw",
+     "health_url": "http://127.0.0.1:18789/health",
      "restart": "nohup openclaw gateway > ~/openclaw.log 2>&1 &"},
-    {"name": "Hermes", "pattern": "hermes_cli.main gateway",
+    {"name": "Hermes", "pattern": "hermes_cli.main gateway", "binary": "hermes",
      "restart": "nohup hermes gateway run --replace > ~/hermes.log 2>&1 &"},
 ]
+
+
+def _running(pattern: str) -> bool:
+    return bool(pattern) and subprocess.run(["pgrep", "-f", pattern],
+                                            capture_output=True).returncode == 0
+
+
+def _parse_selection(text: str, n: int) -> set:
+    """Parse a checklist answer: '' or 'all' → everything, 'none' → nothing, else the listed
+    numbers (comma/space separated)."""
+    t = text.strip().lower()
+    if t in ("", "all", "a"):
+        return set(range(1, n + 1))
+    if t in ("none", "n", "-"):
+        return set()
+    out = set()
+    for part in t.replace(",", " ").split():
+        if part.isdigit() and 1 <= int(part) <= n:
+            out.add(int(part))
+    return out
 
 
 def _ask(prompt: str, default: str = "") -> str:
@@ -87,37 +108,44 @@ def run() -> int:
     print("=== Agents Monitoring setup ===\n")
     if not shutil.which("tmux"):
         print("⚠️  tmux not found — agents run inside tmux, so install tmux first.")
-    print("Scanning tmux for running agents…\n")
-    found = detect.discover_agents()
-    live = [a for a in found if a["alive"]]
-    idle = [a for a in found if not a["alive"]]
-    for a in live:
-        sid = f"  [{a['session_id'][:8]}]" if a.get("session_id") else ""
-        print(f"  • {a['name']}  →  {a['label']}{sid}")
-    for a in idle:
-        print(f"  · {a['name']}  (idle shell)")
-    if not found:
-        print("  (no tmux sessions found)")
-    print()
-
-    agents = []
-    for a in live:
-        if not _yes(f"Supervise '{a['name']}' ({a['label']})?"):
-            continue
-        restart = _auto_restart(a)                              # auto — no typing
-        cwd = detect._session_cwd(a["name"]) or str(Path.home())  # auto from the tmux pane
-        agents.append({"name": a["name"], "label": a["label"],
-                       "match": MATCH_KEYWORD.get(a["kind"], a["kind"]),
-                       "restart": restart, "cwd": cwd, "enabled": True})
-        print(f"    ↻ auto restart: {restart or '(none)'}")
-
-    daemons = []
+    print("Scanning for agents and daemons…\n")
+    # tmux agents (running) + known daemons (running, or installed but currently down).
+    candidates = []
+    for a in (x for x in detect.discover_agents() if x["alive"]):
+        candidates.append({"kind": "agent", "obj": a,
+                           "display": f"{a['name']}  →  {a['label']}"})
     for d in COMMON_DAEMONS:
-        if subprocess.run(["pgrep", "-f", d["pattern"]], capture_output=True).returncode == 0:
-            if _yes(f"Watch daemon '{d['name']}' (detected running)?"):
-                daemons.append(dict(d))                         # includes its default restart
-                if d.get("restart"):
-                    print(f"    ↻ auto restart: {d['restart']}")
+        running = _running(d["pattern"])
+        if running or shutil.which(d.get("binary", "")):
+            candidates.append({"kind": "daemon", "obj": d,
+                               "display": f"{d['name']}  (daemon{'' if running else ', not running'})"})
+
+    chosen: set = set()
+    if not candidates:
+        print("  No running agents or daemons found.")
+        print("  (Start your agents in tmux first, then re-run setup.)")
+    else:
+        print("Found the following. Select which to monitor + auto-restart:\n")
+        for i, c in enumerate(candidates, 1):
+            print(f"  [{i}] {c['display']}")
+        print()
+        sel = _ask("Numbers to include (comma-separated), 'all', or 'none'", "all")
+        chosen = _parse_selection(sel, len(candidates))
+
+    agents, daemons = [], []
+    for i, c in enumerate(candidates, 1):
+        if i not in chosen:
+            continue
+        if c["kind"] == "agent":
+            a = c["obj"]
+            restart = _auto_restart(a)
+            cwd = detect._session_cwd(a["name"]) or str(Path.home())
+            agents.append({"name": a["name"], "label": a["label"],
+                           "match": MATCH_KEYWORD.get(a["kind"], a["kind"]),
+                           "restart": restart, "cwd": cwd, "enabled": True})
+        else:
+            daemons.append(dict(c["obj"]))
+    print(f"\n  → will monitor {len(agents)} agent(s) + {len(daemons)} daemon(s), with auto-restart.")
 
     # Dashboard reach: localhost always works; ask whether to also expose it on the machine's IP.
     print("\nThe dashboard is always reachable on this machine (http://127.0.0.1).")
