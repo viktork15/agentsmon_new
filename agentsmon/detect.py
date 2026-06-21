@@ -163,12 +163,23 @@ def _session_cwd(name: str) -> str | None:
     return r.stdout.strip() if (r and r.returncode == 0 and r.stdout.strip()) else None
 
 
-def _codex_session_for_cwd(cwd: str) -> str | None:
-    """A fresh interactive `codex` has no session id on its command line — it's in the newest
-    rollout file under ~/.codex/sessions whose recorded cwd matches. Return that session's UUID."""
+def _rollout_model(path: str) -> str | None:
+    """The model a Codex session actually ran, from its rollout (turn_context records it even
+    when ~/.codex/config.toml doesn't set one). Reads only the head of the file."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            head = "".join(fh.readline() for _ in range(60))
+    except OSError:
+        return None
+    found = re.findall(r'"model"\s*:\s*"([^"]+)"', head)   # exact "model" key, not model_provider
+    return _pretty_model(found[-1]) if found else None
+
+
+def _codex_info_for_cwd(cwd: str) -> tuple[str | None, str | None]:
+    """Find the Codex session whose recorded cwd matches → (session UUID, concrete model)."""
     base = Path.home() / ".codex" / "sessions"
     if not cwd or not base.is_dir():
-        return None
+        return None, None
     target = os.path.realpath(cwd)
     files = glob.glob(str(base / "**" / "rollout-*.jsonl"), recursive=True)
     files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
@@ -181,9 +192,27 @@ def _codex_session_for_cwd(cwd: str) -> str | None:
         c = d.get("cwd") or (d.get("payload") or {}).get("cwd")
         if c and os.path.realpath(c) == target:
             m = UUID_RE.search(os.path.basename(f))
-            if m:
-                return m.group(0)
+            return (m.group(0) if m else None), _rollout_model(f)
+    return None, None
+
+
+def _codex_model_any() -> str | None:
+    """Model from the most recent Codex rollout (used for daemons like Hermes that run on the
+    Codex provider but don't store the model themselves)."""
+    base = Path.home() / ".codex" / "sessions"
+    if not base.is_dir():
+        return None
+    files = glob.glob(str(base / "**" / "rollout-*.jsonl"), recursive=True)
+    files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
+    for f in files[:5]:
+        m = _rollout_model(f)
+        if m:
+            return m
     return None
+
+
+def _codex_session_for_cwd(cwd: str) -> str | None:
+    return _codex_info_for_cwd(cwd)[0]
 
 
 def _classify(cmds: list[str], extra_matches: list[tuple]) -> tuple[str, str, str | None]:
@@ -233,7 +262,8 @@ def daemon_model(name: str) -> str | None:
     if "openclaw" in n:
         return _openclaw_model()
     if "hermes" in n:
-        return _codex_model()        # Hermes here runs on the openai-codex provider
+        # Hermes here runs on the openai-codex provider → same model as Codex.
+        return _codex_model() or _codex_model_any()
     return None
 
 
@@ -265,14 +295,16 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
         # Prefer non-shell commands when classifying.
         ranked = sorted(cmds, key=lambda c: c.split()[0].rsplit("/", 1)[-1] in SHELLS)
         kind, label, sid = _classify(ranked, extra_matches)
-        if kind == "codex" and codex_model:
-            label = codex_model                 # show the concrete model (e.g. GPT-5.5) when known
-        # A fresh interactive agent has no id on its command line — resolve it from its session
-        # storage by matching the tmux pane's working directory (currently Codex).
-        if sid is None and kind == "codex":
+        # For Codex: resolve the session id + the concrete model from its rollout (the rollout
+        # records the model even when ~/.codex/config.toml doesn't); show the model as the label.
+        if kind == "codex":
             cwd = _session_cwd(s["name"])
-            if cwd:
-                sid = _codex_session_for_cwd(cwd)
+            rsid, rmodel = _codex_info_for_cwd(cwd) if cwd else (None, None)
+            if sid is None:
+                sid = rsid
+            model = rmodel or codex_model
+            if model:
+                label = model
         age = int(now - s["created"]) if s["created"] else None
         resume = RESUME_TEMPLATES.get(kind, "").format(id=sid) if (sid and kind in RESUME_TEMPLATES) else None
         agents.append({
