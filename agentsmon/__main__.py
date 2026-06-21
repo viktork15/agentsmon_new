@@ -21,6 +21,7 @@ def main(argv=None) -> int:
     p.add_argument("-V", "--version", action="version", version=f"agentsmon {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("setup", help="interactive setup wizard")
+    sub.add_parser("new", help="create a new agent (pick type + name), launch it, and monitor it")
     sub.add_parser("add", help="detect and add newly-running agents/daemons (no full re-setup)")
     sub.add_parser("update", help="pull the latest code and reload (no re-setup)")
     sub.add_parser("status", help="print live status")
@@ -50,6 +51,9 @@ def main(argv=None) -> int:
     if args.command == "setup":
         from . import wizard
         return wizard.run()
+    if args.command == "new":
+        from . import wizard
+        return wizard.new()
     if args.command == "add":
         from . import wizard
         return wizard.add()

@@ -25,6 +25,23 @@ RESTART_DEFAULTS = {
 MATCH_KEYWORD = {"claude-code": "claude", "codex": "codex", "antigravity": "agy",
                  "aider": "aider", "gemini": "gemini"}
 
+#: For `agentsmon new` — create a brand-new agent. Per kind: the CLI binary to check, a human
+#: label, the fresh launch command, and the keepalive restart command (for Claude we resume the
+#: most recent conversation with --continue, so a restart keeps its context without needing an id).
+AGENT_TYPES = [
+    {"kind": "claude-code", "label": "Claude Code", "bin": "claude",
+     "launch": "claude --dangerously-skip-permissions",
+     "restart": "claude --continue --dangerously-skip-permissions"},
+    {"kind": "codex", "label": "Codex", "bin": "codex",
+     "launch": "codex --dangerously-bypass-approvals-and-sandbox",
+     "restart": "codex --dangerously-bypass-approvals-and-sandbox"},
+    {"kind": "antigravity", "label": "Antigravity", "bin": "agy",
+     "launch": "agy --dangerously-skip-permissions",
+     "restart": "agy --dangerously-skip-permissions"},
+    {"kind": "aider", "label": "Aider", "bin": "aider", "launch": "aider", "restart": "aider"},
+    {"kind": "gemini", "label": "Gemini", "bin": "gemini", "launch": "gemini", "restart": "gemini"},
+]
+
 
 def _auto_restart(a: dict) -> str:
     """Build the restart command for a detected agent — no user typing needed."""
@@ -261,6 +278,60 @@ def add() -> int:
     print(f"\n✓ Added {added}. Reloading the boot service + dashboard…")
     service.install()
     print("Done — check:  agentsmon status")
+    return 0
+
+
+def new() -> int:
+    """`agentsmon new` — create a brand-new agent: pick a type, give it a name. It's launched in a
+    fresh tmux session and immediately registered for keepalive + the dashboard."""
+    if not shutil.which("tmux"):
+        print("⚠️  tmux not found — agents run inside tmux. Install tmux first.")
+        return 1
+    available = [t for t in AGENT_TYPES if shutil.which(t["bin"])]
+    if not available:
+        print("No agent CLI found on PATH (claude / codex / agy / aider / gemini).")
+        print("Install one (e.g. Claude Code) first, then re-run:  agentsmon new")
+        return 1
+
+    print("=== Create a new agent ===\n")
+    print("Step 1 — choose the agent type:\n")
+    for i, t in enumerate(available, 1):
+        print(f"  [{i}] {t['label']}")
+    sel = _ask("\nNumber", "1")
+    idx = int(sel) if (sel.isdigit() and 1 <= int(sel) <= len(available)) else 1
+    chosen = available[idx - 1]
+
+    existing = {s["name"] for s in detect.tmux_sessions()}
+    name = ""
+    while not name:
+        name = _ask("\nStep 2 — name for the agent")
+        if not name:
+            continue
+        if any(c in name for c in ".:"):
+            print("  Name can't contain '.' or ':' (tmux limitation) — pick another.")
+            name = ""
+        elif name in existing:
+            print(f"  A tmux session '{name}' already exists — pick another name.")
+            name = ""
+
+    cwd = str(Path(_ask("Working directory", str(Path.home()))).expanduser())
+
+    # Create the session detached and launch the agent inside it.
+    mk = subprocess.run(["tmux", "new-session", "-d", "-s", name, "-c", cwd], capture_output=True, text=True)
+    if mk.returncode != 0:
+        print(f"✗ couldn't create tmux session: {mk.stderr.strip()}")
+        return 1
+    subprocess.run(["tmux", "send-keys", "-t", name, chosen["launch"], "Enter"], capture_output=True)
+
+    cfg = config.load()
+    cfg.setdefault("agents", []).append({
+        "name": name, "label": chosen["label"], "match": MATCH_KEYWORD[chosen["kind"]],
+        "restart": chosen["restart"], "cwd": cwd, "enabled": True})
+    config.save(cfg)
+    print(f"\n✓ Created '{name}' ({chosen['label']}), launched in tmux, and added to monitoring.")
+    service.install()
+    print(f"\nAttach to interact (or finish login):  tmux attach -t {name}")
+    print("It now shows on the dashboard and is kept alive automatically.")
     return 0
 
 

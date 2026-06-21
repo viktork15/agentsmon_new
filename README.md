@@ -48,11 +48,16 @@ python3 -m agentsmon setup
 The wizard scans tmux, lists the agents it found, lets you pick which to supervise (proposing a
 restart command for each), optionally watches detected daemons, and installs the boot service.
 
+To **spin up a fresh agent**, run `agentsmon new`: it asks for a type (Claude Code / Codex /
+Antigravity / Aider / Gemini — whichever CLIs are installed) and a name, launches it in its own
+tmux session, and registers it for keepalive + the dashboard in one step.
+
 ---
 
 ## Commands
 
 ```bash
+agentsmon new               # create a new agent: pick a type + name, launch it, start monitoring
 agentsmon update            # pull latest code + reload (no re-setup)
 agentsmon add               # detect & add newly-started agents/daemons (no full re-setup)
 agentsmon status            # live agent + daemon status in the terminal
