@@ -89,7 +89,7 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
         <p class="m-sla-sub text-[11px] text-slate-400">SLA</p>
       </div>
       <div class="rounded-lg border border-slate-200 bg-white p-3">
-        <p class="text-[11px] uppercase tracking-wide text-slate-400">Latency</p>
+        <p class="m-x-label text-[11px] uppercase tracking-wide text-slate-400">Latency</p>
         <p class="m-x text-lg font-semibold mt-0.5">–</p>
         <p class="m-x-sub text-[11px] text-slate-400">health check</p>
       </div>
@@ -152,7 +152,15 @@ function renderService(root, s){
   q(root,".m-uptime").textContent=fmtDuration(s.uptime_seconds);
   q(root,".m-sla").textContent=s.sla!=null?s.sla.toFixed(2)+" %":"–";
   q(root,".m-sla-sub").textContent="over "+s.sla_window_days+" days ("+(s.sla_samples||0)+" samples)";
-  q(root,".m-x").textContent=s.latency_ms!=null?s.latency_ms+" ms":"–";
+  if(s.metric==="agents"){
+    q(root,".m-x-label").textContent="Agents";
+    q(root,".m-x").textContent=(s.metric_value!=null?s.metric_value:"–")+(s.metric_value!=null?" running":"");
+    q(root,".m-x-sub").textContent="live in tmux";
+  }else{
+    q(root,".m-x-label").textContent="Latency";
+    q(root,".m-x").textContent=s.latency_ms!=null?s.latency_ms+" ms":"–";
+    q(root,".m-x-sub").textContent="health check";
+  }
   renderTimeline(root, s.timeline, s.timeline_days);
 }
 function renderAgents(root, agents){
@@ -218,7 +226,7 @@ refresh(); setInterval(refresh, POLL*1000);
 </script></body></html>"""
 
 
-def _service_state(cfg: dict) -> list[dict]:
+def _service_state(cfg: dict, running_agents: int = 0) -> list[dict]:
     win_days = int(cfg.get("probe", {}).get("sla_window_days", 90))
     tdays = int(cfg.get("probe", {}).get("timeline_days", 90))
     min_outage = int(cfg.get("probe", {}).get("min_outage_samples", 3))
@@ -230,6 +238,7 @@ def _service_state(cfg: dict) -> list[dict]:
         cur = db.last(name)
         sla_pct, samples = db.sla(name, win_days * 86400)
         lat = cur["latency"] if (cur and cur["latency"] is not None) else None
+        metric = s.get("metric", "latency")   # "latency" | "agents" (show running-agent count)
         out.append({
             "name": name,
             "up": bool(cur and cur["up"]),
@@ -237,6 +246,7 @@ def _service_state(cfg: dict) -> list[dict]:
             "detail": cur["detail"] if cur else "no data yet",
             "last_ts": cur["ts"] if cur else None,
             "latency_ms": round(lat * 1000) if lat is not None else None,
+            "metric": metric, "metric_value": running_agents if metric == "agents" else None,
             "uptime_seconds": db.uptime_seconds(name, min_outage),
             "sla": sla_pct, "sla_window_days": win_days, "sla_samples": samples,
             "timeline": db.timeline(name, tdays * 86400, tdays), "timeline_days": tdays,
