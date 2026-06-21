@@ -202,17 +202,53 @@ def _classify(cmds: list[str], extra_matches: list[tuple]) -> tuple[str, str, st
     return "shell", "shell (idle)", None
 
 
+def _pretty_model(raw: str) -> str:
+    """'openai/gpt-5.5' → 'GPT-5.5'; leaves other model names readable."""
+    raw = raw.split("/")[-1]
+    return raw.upper() if raw[:1].lower() in ("g", "o") else raw
+
+
 def _codex_model() -> str | None:
     """Best-effort concrete model for Codex, from ~/.codex/config.toml (e.g. 'GPT-5.5')."""
     try:
         txt = (Path.home() / ".codex" / "config.toml").read_text(encoding="utf-8")
     except OSError:
         return None
-    m = re.search(r'(?m)^\s*model\s*=\s*["\']?([A-Za-z0-9._-]+)', txt)
-    if not m:
+    m = re.search(r'(?m)^\s*model\s*=\s*["\']?([A-Za-z0-9._/-]+)', txt)
+    return _pretty_model(m.group(1)) if m else None
+
+
+def _openclaw_model() -> str | None:
+    try:
+        txt = (Path.home() / ".openclaw" / "openclaw.json").read_text(encoding="utf-8")
+    except OSError:
         return None
-    model = m.group(1)
-    return model.upper() if model[:1].lower() in ("g", "o") else model
+    m = re.search(r'"model"\s*:\s*"([A-Za-z0-9._/-]+)"', txt)
+    return _pretty_model(m.group(1)) if m else None
+
+
+def daemon_model(name: str) -> str | None:
+    """Concrete model a known daemon runs (best-effort, for the tag)."""
+    n = name.lower()
+    if "openclaw" in n:
+        return _openclaw_model()
+    if "hermes" in n:
+        return _codex_model()        # Hermes here runs on the openai-codex provider
+    return None
+
+
+def vendor_for_model(model: str | None) -> str | None:
+    """Maker → tag colour, inferred from a model name."""
+    if not model:
+        return None
+    m = model.lower()
+    if "gpt" in m or m[:1] == "o":
+        return "openai"
+    if any(k in m for k in ("claude", "opus", "sonnet", "haiku")):
+        return "anthropic"
+    if "gemini" in m:
+        return "google"
+    return None
 
 
 def discover_agents(extra_matches: list[tuple] | None = None, now: float | None = None) -> list[dict]:

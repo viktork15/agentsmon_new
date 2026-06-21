@@ -51,10 +51,10 @@ def primary_ip() -> str:
     except Exception:
         return "127.0.0.1"
 COMMON_DAEMONS = [
-    {"name": "OpenClaw", "pattern": "openclaw", "binary": "openclaw",
+    {"name": "OpenClaw", "pattern": "openclaw", "binary": "openclaw", "name_color": "red",
      "health_url": "http://127.0.0.1:18789/health",
      "restart": "nohup openclaw gateway > ~/openclaw.log 2>&1 &"},
-    {"name": "Hermes", "pattern": "hermes.* gateway", "binary": "hermes",
+    {"name": "Hermes", "pattern": "hermes.* gateway", "binary": "hermes", "name_color": "gold",
      "restart": "nohup hermes gateway run --replace > ~/hermes.log 2>&1 &"},
 ]
 
@@ -195,10 +195,20 @@ def run() -> int:
     # Build the full dashboard by default (the layout we run ourselves): each selected daemon
     # becomes both a row at the top of Persistent Agents AND its own availability card with
     # uptime/SLA/latency. tmux agents already carry their maker colour automatically.
-    cfg["pinned_daemons"] = [
-        {"name": d["name"], "process": d["pattern"],
-         **({"health_url": d["health_url"]} if d.get("health_url") else {})}
-        for d in daemons]
+    cfg["pinned_daemons"] = []
+    for d in daemons:
+        entry = {"name": d["name"], "process": d["pattern"]}
+        if d.get("health_url"):
+            entry["health_url"] = d["health_url"]
+        if d.get("name_color"):
+            entry["name_color"] = d["name_color"]   # OpenClaw red, Hermes gold (default)
+        model = detect.daemon_model(d["name"])
+        if model:
+            entry["tag"] = model                     # show the concrete model
+            v = detect.vendor_for_model(model)
+            if v:
+                entry["vendor"] = v
+        cfg["pinned_daemons"].append(entry)
     cfg["services"] = [
         {"name": d["name"], "process": d["pattern"],
          **({"health_url": d["health_url"]} if d.get("health_url") else {})}
