@@ -591,7 +591,13 @@ def _http_ok(url: str, timeout: float = 4) -> bool:
 
 
 def daemon_status(daemons: list[dict]) -> list[dict]:
-    """For each configured daemon ({name, pattern, health_url?}), is it running / healthy?"""
+    """For each configured daemon ({name, pattern, health_url?}), is it running / healthy?
+
+    When a daemon advertises a ``health_url`` the health check is authoritative for ``up`` —
+    the process pattern is NOT required to match. Process command lines differ across install
+    methods (venv / pip --user / pipx), so gating on the pattern would make keepalive needlessly
+    restart a daemon that is demonstrably healthy. The pattern is the liveness signal only when
+    there is no ``health_url``."""
     out = []
     for d in daemons:
         pat = d.get("pattern", "")
@@ -601,7 +607,7 @@ def daemon_status(daemons: list[dict]) -> list[dict]:
         url = d.get("health_url")
         if url:
             entry["http_ok"] = _http_ok(url)
-            entry["up"] = proc_up and entry["http_ok"]
+            entry["up"] = entry["http_ok"]      # health endpoint is the source of truth
         else:
             entry["up"] = proc_up
         out.append(entry)
