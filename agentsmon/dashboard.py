@@ -196,10 +196,13 @@ function renderAgents(root, agents){
     const tr=document.createElement("tr"); tr.className="border-b border-slate-100 last:border-0";
     const nameBg=NAME_BG[a.name_color];
     const nameInner=nameBg?`<span class="inline-block rounded px-1.5 py-0.5 ${nameBg}">${esc(a.name)}</span>`:esc(a.name);
-    // Clicking the agent name copies the tmux-attach command (like the session id). Feedback is a
-    // toast (not a text swap) so the column width never jumps.
+    // Only tmux agents can be attached to; daemons (kind "daemon", e.g. OpenClaw/Hermes) aren't in
+    // tmux. For a tmux agent, clicking its name copies the attach command (toast feedback so the
+    // column width never jumps).
     const attachCmd=`tmux attach -t "${a.name}"`;
-    const nameCell=`<span class="agent-name cursor-pointer hover:text-sky-600" data-copy="${esc(attachCmd)}" title="${esc(attachCmd)} — klik = kopírovat">${nameInner}</span>`;
+    const nameCell=(a.kind!=="daemon")
+      ? `<span class="agent-name cursor-pointer hover:text-sky-600" data-copy="${esc(attachCmd)}" title="${esc(attachCmd)} (click to copy)">${nameInner}</span>`
+      : nameInner;
     // Telegram deep-link icon for agents bridged to a bot (opens t.me/<bot> in a new tab).
     const tg=a.telegram_url?` <a href="${esc(a.telegram_url)}" target="_blank" rel="noopener" title="Open @${esc(a.telegram_bot)} in Telegram" class="inline-flex align-middle ml-1 hover:opacity-70"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="#229ED9"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.27 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg></a>`:"";
     tr.innerHTML=
@@ -244,7 +247,7 @@ document.addEventListener("click", e=>{
     // Flash the element green + toast — no textContent swap, so column width never jumps.
     el.classList.add("copied-flash");
     setTimeout(()=>el.classList.remove("copied-flash"), 700);
-    showToast("✓ Zkopírováno do schránky");
+    showToast("✓ Copied to clipboard");
   });
 });
 refresh(); setInterval(refresh, POLL*1000);
