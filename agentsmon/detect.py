@@ -279,8 +279,11 @@ def _antigravity_base() -> Path:
 
 
 def _pretty_gemini_model(raw: str) -> str:
-    """``gemini-3-flash-agent`` → ``Gemini 3 Flash`` (drop the internal -agent/-a suffix)."""
-    s = re.sub(r"-(agent|a)$", "", raw or "")
+    """``gemini-3-flash-agent`` → ``Gemini 3 Flash``. Drops the internal ``-agent``/``-a`` suffix
+    AND the per-turn reasoning level (``-low``/``-medium``/``-high``) — the level is a volatile,
+    per-response setting recorded in the conversation store, not part of the model name, so showing
+    it (e.g. a stale '...Low' while the CLI is on Medium) is misleading."""
+    s = re.sub(r"-(agent|a|low|medium|high)$", "", raw or "")
     return " ".join(p if any(c.isdigit() for c in p) else p.capitalize() for p in s.split("-"))
 
 
