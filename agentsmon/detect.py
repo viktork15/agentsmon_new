@@ -339,15 +339,42 @@ def _claude_model_from_transcript(path: str) -> str | None:
 
 ##NEW LINES
 
-def _claude_info_for_cwd(cwd: str) -> tuple[str | None, str | None]:
+def _transcript_start_ts(path: str, head: list[str]) -> float:
+    """Best-effort session start time: the earliest ISO ``timestamp`` in the head lines,
+    falling back to the file's mtime. Used to match a transcript to the agent that owns it."""
+    for line in head:
+        try:
+            ts = json.loads(line).get("timestamp")
+        except ValueError:
+            continue
+        if ts:
+            try:
+                return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                pass
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
+def _claude_info_for_cwd(cwd: str, session_started: float | None = None,
+                         claimed: set[str] | None = None) -> tuple[str | None, str | None]:
     """A freshly launched `claude` has no ``--resume`` id on argv, so resolve its session UUID
-    (and concrete model) from ~/.claude/projects/ — the newest transcript whose ``cwd`` matches."""
+    (and concrete model) from ~/.claude/projects/ by matching the transcript ``cwd``.
+
+    When several Claude agents run in the SAME cwd, picking the newest transcript would give
+    them all the same id. So: collect every transcript matching the cwd, skip ids already
+    ``claimed`` by another agent this pass, and pick the one whose start time is closest to this
+    agent's tmux ``session_started`` (newest first when no start hint is available). The chosen
+    id is added to ``claimed`` so the next same-cwd agent gets a different transcript."""
     base = Path.home() / ".claude" / "projects"
     if not cwd or not base.is_dir():
         return None, None
     target = os.path.realpath(cwd)
     files = glob.glob(str(base / "**" / "*.jsonl"), recursive=True)
     files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
+    candidates = []   # (start_ts, file, sid)
     for f in files[:300]:
         try:
             with open(f, encoding="utf-8") as fh:
@@ -362,8 +389,19 @@ def _claude_info_for_cwd(cwd: str) -> tuple[str | None, str | None]:
             if c and os.path.realpath(c) == target:
                 m = UUID_RE.search(os.path.basename(f))
                 sid = m.group(0) if m else Path(f).stem
-                return sid, _claude_model_from_transcript(f)
-    return None, None
+                if claimed is None or sid not in claimed:
+                    candidates.append((_transcript_start_ts(f, head), f, sid))
+                break
+    if not candidates:
+        return None, None
+    if session_started is not None:
+        candidates.sort(key=lambda t: abs(t[0] - session_started))
+    else:
+        candidates.sort(key=lambda t: t[0], reverse=True)
+    _, chosen_f, chosen_sid = candidates[0]
+    if claimed is not None:
+        claimed.add(chosen_sid)
+    return chosen_sid, _claude_model_from_transcript(chosen_f)
 
 
 def _antigravity_base() -> Path:
