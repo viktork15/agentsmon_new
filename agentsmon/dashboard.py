@@ -135,37 +135,37 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
       <h2 class="svc-name text-base font-semibold"></h2>
       <span class="svc-state ml-auto text-sm font-medium text-slate-400">loading…</span>
     </div>
-    <div class="grid grid-cols-3 gap-3 mb-3">
-      <div class="rounded-lg border border-slate-200 bg-white p-3">
-        <p class="text-[11px] uppercase tracking-wide text-slate-400">Uptime</p>
-        <p class="m-uptime text-lg font-semibold mt-0.5">–</p>
-        <p class="text-[11px] text-slate-400">current streak</p>
+    <div class="grid grid-cols-6 gap-2 mb-3">
+      <div class="rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0">
+        <p class="text-[10px] uppercase tracking-wide text-slate-400">Uptime</p>
+        <p class="m-uptime truncate text-base font-semibold leading-none mt-1.5">–</p>
+        <p class="text-[10px] text-slate-400 mt-1">current streak</p>
       </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-3">
-        <p class="text-[11px] uppercase tracking-wide text-slate-400">Availability</p>
-        <p class="m-sla text-lg font-semibold mt-0.5">–</p>
-        <p class="m-sla-sub text-[11px] text-slate-400">SLA</p>
+      <div class="rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0">
+        <p class="text-[10px] uppercase tracking-wide text-slate-400">Availability</p>
+        <p class="m-sla truncate text-base font-semibold leading-none mt-1.5">–</p>
+        <p class="m-sla-sub truncate text-[10px] text-slate-400 mt-1">SLA</p>
       </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-3">
-        <p class="m-x-label text-[11px] uppercase tracking-wide text-slate-400">Latency</p>
-        <p class="m-x text-lg font-semibold mt-0.5">–</p>
-        <p class="m-x-sub text-[11px] text-slate-400">health check</p>
+      <div class="rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0">
+        <p class="m-x-label text-[10px] uppercase tracking-wide text-slate-400">Latency</p>
+        <p class="m-x truncate text-base font-semibold leading-none mt-1.5">–</p>
+        <p class="m-x-sub truncate text-[10px] text-slate-400 mt-1">health check</p>
       </div>
-    </div>
-    <div class="rounded-lg border border-slate-200 bg-white p-4">
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="text-xs font-semibold text-slate-500">Availability history</h3>
-        <span class="svc-tl-window text-[11px] text-slate-400"></span>
-      </div>
-      <div class="svc-timeline flex items-end gap-[2px] h-8"></div>
-      <div class="flex items-center justify-between mt-2 text-[11px] text-slate-400">
-        <span class="svc-tl-start"></span>
-        <div class="flex items-center gap-3">
-          <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-emerald-500"></span>Operational</span>
-          <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-rose-500"></span>Outage</span>
-          <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-slate-200"></span>No data</span>
+      <div class="rounded-lg border border-slate-200 bg-white px-3 py-2 min-w-0 col-span-3">
+        <div class="flex items-center justify-between mb-1.5">
+          <h3 class="text-[10px] uppercase tracking-wide font-medium text-slate-400">Availability history</h3>
+          <span class="svc-tl-window text-[10px] text-slate-400"></span>
         </div>
-        <span>now</span>
+        <div class="svc-timeline flex items-end gap-[2px] h-7"></div>
+        <div class="flex items-center justify-between mt-1.5 text-[10px] text-slate-400">
+          <span class="svc-tl-start"></span>
+          <div class="flex items-center gap-2">
+            <span class="flex items-center gap-1"><span class="h-1.5 w-1.5 rounded-sm bg-emerald-500"></span>Operational</span>
+            <span class="flex items-center gap-1"><span class="h-1.5 w-1.5 rounded-sm bg-rose-500"></span>Outage</span>
+            <span class="flex items-center gap-1"><span class="h-1.5 w-1.5 rounded-sm bg-slate-200"></span>No data</span>
+          </div>
+          <span>now</span>
+        </div>
       </div>
     </div>
   </section>
