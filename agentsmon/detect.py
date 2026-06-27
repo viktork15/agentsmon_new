@@ -207,14 +207,17 @@ def _session_cwd(name: str) -> str | None:
 
 
 def _rollout_model(path: str) -> str | None:
-    """The model a Codex session actually ran, from its rollout (turn_context records it even
-    when ~/.codex/config.toml doesn't set one). Reads only the head of the file."""
+    """The model a Codex session actually ran, from its rollout. Reads the TAIL so a mid-session
+    model change (turn_context records the model per turn) is reflected immediately."""
     try:
-        with open(path, encoding="utf-8") as fh:
-            head = "".join(fh.readline() for _ in range(60))
+        size = os.path.getsize(path)
+        with open(path, "rb") as fh:
+            if size > 32768:
+                fh.seek(size - 32768)
+            data = fh.read().decode("utf-8", "ignore")
     except OSError:
         return None
-    found = re.findall(r'"model"\s*:\s*"([^"]+)"', head)   # exact "model" key, not model_provider
+    found = re.findall(r'"model"\s*:\s*"([^"]+)"', data)
     return _pretty_model(found[-1]) if found else None
 
 
@@ -674,7 +677,8 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
             rsid, rmodel = _codex_info_for_cwd(cwd) if cwd else (None, None)
             if sid is None:
                 sid = rsid
-            model = rmodel or codex_model
+            # config.toml is the authoritative current model; rollout is a historical fallback
+            model = codex_model or rmodel
             if model:
 #                label = model
                 label = display_model(model)
