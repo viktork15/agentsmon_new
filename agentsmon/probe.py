@@ -69,9 +69,11 @@ def _system_health(cfg: dict) -> tuple[bool, float | None, str]:
     # advertises a health endpoint is judged by that endpoint — authoritative. The process
     # pattern is the liveness signal ONLY when there's no health_url, since command lines vary
     # by install method (venv / pip --user / pipx) and a stale regex would fake an outage.
-    checks = list(cfg.get("daemons", []))
-    checks += list(cfg.get("pinned_daemons", []))
-    checks += [s for s in cfg.get("services", []) if s.get("kind") != "system"]
+    # Skip components explicitly disabled from the dashboard — keepalive won't revive them,
+    # so a deliberately-stopped daemon/service must not count as a system outage.
+    checks = [c for c in cfg.get("daemons", []) if c.get("enabled", True)]
+    checks += [c for c in cfg.get("pinned_daemons", []) if c.get("enabled", True)]
+    checks += [s for s in cfg.get("services", []) if s.get("kind") != "system" and s.get("enabled", True)]
     for c in checks:
         name = c.get("name") or c.get("process") or c.get("pattern") or "?"
         url = c.get("health_url")

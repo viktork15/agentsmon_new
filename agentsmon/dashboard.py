@@ -373,7 +373,7 @@ document.addEventListener("click", async e=>{
   showToast((act==="restart"?"↻ Restarting ":"✕ Stopping ")+name+"…");
   try{
     const r=await fetch("/api/agent/action",{method:"POST",credentials:"same-origin",
-      headers:{"Content-Type":"application/json"},body:JSON.stringify({name,action:act})});
+      headers:{"Content-Type":"application/json","X-Requested-With":"agentsmon"},body:JSON.stringify({name,action:act})});
     const j=await r.json().catch(()=>({}));
     showToast((j&&j.ok?"✓ ":"⚠ ")+((j&&j.message)||(r.ok?"done":"failed")));
   }catch(err){ showToast("⚠ "+err); }
