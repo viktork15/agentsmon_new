@@ -99,6 +99,7 @@ def _start(agent: dict, tmux_bin: str, recreate: bool = False) -> None:
                        capture_output=True, timeout=10)
 
 
+
 def tick(cfg: dict) -> int:
     """One supervision pass. Returns the number of restarts performed."""
     tmux_bin = shutil.which(cfg.get("tmux_bin", "tmux")) or "tmux"

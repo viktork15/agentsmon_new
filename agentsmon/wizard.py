@@ -76,7 +76,7 @@ COMMON_DAEMONS = [
     # installs). The pattern is best-effort, only for the uptime column: 'hermes gateway' matches
     # the real `…/bin/hermes gateway run` and avoids the OpenClaw node gateway launched from a
     # .hermes/node path (whose command line is `…/index.js gateway`, no "hermes gateway").
-    {"name": "Hermes", "pattern": "hermes gateway", "binary": "hermes", "name_color": "gold",
+    {"name": "Hermes", "pattern": "hermes_cli.main.*gateway|hermes gateway", "binary": "hermes", "name_color": "gold",
      "health_url": "http://127.0.0.1:8642/health",
      "restart": "nohup hermes gateway run --replace > ~/hermes.log 2>&1 &"},
 ]

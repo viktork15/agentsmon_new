@@ -112,11 +112,24 @@ def pinned_agents(pinned: list[dict]) -> list[dict]:
             alive = bool(pids)                            # no health URL → fall back to process match
         # Concrete model detected LIVE (so it stays current without rebuilding config); an
         # explicit config tag/vendor still wins if set.
-        model = daemon_model(d.get("name", ""))
+#        model = daemon_model(d.get("name", ""))
+#        model = display_model(daemon_model(d.get("name", "")))
+
+        raw_model = daemon_model(d.get("name", ""))
+        model = display_model(raw_model)
+
         out.append({
             "name": d.get("name"), "kind": "daemon",
-            "label": d.get("tag") or model or d.get("name"),
-            "vendor": d.get("vendor") or vendor_for_model(model),
+#            "label": d.get("tag") or model or d.get("name"),
+#            "vendor": d.get("vendor") or vendor_for_model(model),
+
+            "label": model or d.get("tag") or d.get("name"),
+            "vendor": (
+                       vendor_for_model(raw_model)
+                       if model
+                       else d.get("vendor")
+                      ),
+
             "name_color": d.get("name_color"),
             "session_id": None, "alive": alive, "age": age, "latency_ms": lat,
             "health_url": health_url,
@@ -253,9 +266,27 @@ def _pretty_claude_model(raw: str) -> str:
     return f"{m.group(1).capitalize()} {ver}"
 
 
+#def _claude_model_from_transcript(path: str) -> str | None:
+#    """The model a Claude Code session is actually running, from the tail of its transcript (each
+#   assistant turn records ``message.model``); we take the latest real one, ignoring synthetic."""
+#    try:
+#        size = os.path.getsize(path)
+#        with open(path, "rb") as fh:
+#            if size > 65536:
+#                fh.seek(size - 65536)
+#            data = fh.read().decode("utf-8", "ignore")
+#    except OSError:
+#        return None
+#    for m in reversed(re.findall(r'"model"\s*:\s*"([^"]+)"', data)):
+#        if m and m != "<synthetic>":
+#            return _pretty_claude_model(m)
+#    return None
+
+
+##NEW LINES
+
 def _claude_model_from_transcript(path: str) -> str | None:
-    """The model a Claude Code session is actually running, from the tail of its transcript (each
-    assistant turn records ``message.model``); we take the latest real one, ignoring synthetic."""
+    """Detect Claude Code model from transcript (supports old and new transcript formats)."""
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as fh:
@@ -264,11 +295,49 @@ def _claude_model_from_transcript(path: str) -> str | None:
             data = fh.read().decode("utf-8", "ignore")
     except OSError:
         return None
+
+        # Claude Code >= 2.1
+    matches = re.findall(r"Set model to\s+([^(<\n]+)", data, re.IGNORECASE)
+    if matches:
+        name = matches[-1].strip()
+
+        name = re.sub(r'\\u001b\[[0-9;]*m', '', name)
+        name = re.sub(r'\s+and saved.*$', '', name, flags=re.IGNORECASE)
+
+#        if not name.lower().startswith("claude"):
+#            name = "Claude " + name
+
+        return name.strip()
+
+    # Claude Code <= 2.0
     for m in reversed(re.findall(r'"model"\s*:\s*"([^"]+)"', data)):
         if m and m != "<synthetic>":
             return _pretty_claude_model(m)
+
     return None
 
+#    # Claude Code <= 2.0
+#    for m in reversed(re.findall(r'"model"\s*:\s*"([^"]+)"', data)):
+#        if m and m != "<synthetic>":
+#            return _pretty_claude_model(m)
+#
+#    # Claude Code >= 2.1
+#
+#    matches = re.findall(r"Set model to\s+([^(<\n]+)", data, re.IGNORECASE)
+#    if matches:
+#        name = matches[-1].strip()
+#
+#        # odstranění ANSI escape sekvencí (\u001b[1m apod.)
+#        name = re.sub(r'\\u001b\[[0-9;]*m', '', name)
+#
+#        if not name.lower().startswith("claude"):
+#            name = "Claude " + name
+#
+#        return name.strip()
+#
+#    return None
+
+##NEW LINES
 
 def _claude_info_for_cwd(cwd: str) -> tuple[str | None, str | None]:
     """A freshly launched `claude` has no ``--resume`` id on argv, so resolve its session UUID
@@ -385,6 +454,27 @@ def _codex_model() -> str | None:
     m = re.search(r'(?m)^\s*model\s*=\s*["\']?([A-Za-z0-9._/-]+)', txt)
     return _pretty_model(m.group(1)) if m else None
 
+##NEW LINES
+
+def _hermes_model() -> str | None:
+    """Hermes default model from ~/.hermes/config.yaml."""
+    try:
+        from pathlib import Path
+        import yaml
+
+        cfg = yaml.safe_load(
+            (Path.home() / ".hermes" / "config.yaml").read_text("utf-8")
+        ) or {}
+
+        model = cfg.get("model") or {}
+        default = model.get("default")
+
+        return default if isinstance(default, str) else None
+
+    except Exception:
+        return None
+
+##NEW LINES
 
 def _openclaw_model() -> str | None:
     """OpenClaw's model from openclaw.json. The key may be a string ('model': 'openai/gpt-5.5')
@@ -426,11 +516,82 @@ def daemon_model(name: str) -> str | None:
     n = name.lower()
     if "openclaw" in n:
         return _openclaw_model()
+#    if "hermes" in n:
+#        # Hermes here runs on the openai-codex provider → same model as Codex.
+#        return _codex_model() or _codex_model_any()
+
     if "hermes" in n:
-        # Hermes here runs on the openai-codex provider → same model as Codex.
-        return _codex_model() or _codex_model_any()
+        return (
+            _hermes_model()
+            or _codex_model()
+            or _codex_model_any()
+        )
+
     return None
 
+##NEW LINES
+
+
+def display_model(model: str | None) -> str | None:
+    """Pretty model names for the dashboard."""
+    if not model:
+        return model
+
+    if "/" in model:
+        model = model.split("/", 1)[1]
+
+    aliases = {
+        # OpenAI
+    	"gpt-5.5": "GPT-5.5",
+    	"gpt-5.4": "GPT-5.4",
+        "gpt-5": "GPT-5",
+    	"gpt-5-mini": "GPT-5 Mini",
+    	"gpt-5-nano": "GPT-5 Nano",
+    	"gpt-4.1": "GPT-4.1",
+    	"gpt-4.1-mini": "GPT-4.1 Mini",
+    	"gpt-4o": "GPT-4o",
+    	"gpt-4o-mini": "GPT-4o Mini",
+    	"o3": "o3",
+   	"o3-pro": "o3 Pro",
+    	"o4-mini": "o4 Mini",
+
+    	# Anthropic
+        "claude-fable-5": "Fable 5",
+    	"claude-opus-4-8": "Opus 4.8",
+    	"claude-sonnet-4-6": "Sonnet 4.6",
+    	"claude-haiku-4": "Haiku 4",
+
+    	# Google
+    	"gemini-2.5-pro": "Gemini 2.5 Pro",
+    	"gemini-2.5-flash": "Gemini 2.5 Flash",
+    	"gemini-2.5-flash-lite": "Gemini 2.5 Flash Lite",
+
+    	# xAI
+    	"grok-4": "Grok 4",
+    	"grok-4.20-reasoning": "Grok 4.20",
+    	"grok-code-fast-1": "Grok Code Fast",
+
+    	# DeepSeek
+    	"deepseek-v4-pro": "DeepSeek V4 Pro",
+    	"deepseek-r1": "DeepSeek R1",
+    	"deepseek-chat": "DeepSeek Chat",
+
+    	# Qwen
+    	"qwen3-coder": "Qwen3 Coder",
+    	"qwen3-235b": "Qwen3 235B",
+
+    	# Moonshot
+    	"kimi-k2": "Kimi K2",
+
+    	# Meta
+    	"llama-4-maverick": "Llama 4 Maverick",
+    	"llama-4-scout": "Llama 4 Scout",
+    }
+
+
+    return aliases.get(model, model)
+
+##NEW LINES
 
 def vendor_for_model(model: str | None) -> str | None:
     """Maker → tag colour, inferred from a model name."""
@@ -469,7 +630,9 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
                 sid = rsid
             model = rmodel or codex_model
             if model:
-                label = model
+#                label = model
+                label = display_model(model)
+
         # Claude Code / Antigravity: a fresh launch has no id on argv — resolve the session id AND
         # the concrete model by cwd, so both show up (just like Codex does).
         if kind == "claude-code":
@@ -478,14 +641,17 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
             if sid is None:
                 sid = csid
             if cmodel:
-                label = cmodel
+#                label = cmodel
+                label = display_model(cmodel)
+
         elif kind == "antigravity":
             cwd = _session_cwd(s["name"])
             asid, amodel = _antigravity_info_for_cwd(cwd) if cwd else (None, None)
             if sid is None:
                 sid = asid
             if amodel:
-                label = amodel
+#                label = amodel
+                label = display_model(amodel)
         age = int(now - s["created"]) if s["created"] else None
         resume = RESUME_TEMPLATES.get(kind, "").format(id=sid) if (sid and kind in RESUME_TEMPLATES) else None
         agents.append({

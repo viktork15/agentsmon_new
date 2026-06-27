@@ -13,12 +13,27 @@ import time
 from . import config
 
 
+class _ClosingConnection(sqlite3.Connection):
+    """sqlite3 context manager that also closes the file descriptors on exit.
+
+    The default sqlite3.Connection context manager commits/rolls back but does
+    not close the connection. The dashboard calls the DB helpers on every poll,
+    so not closing here leaks uptime.sqlite and uptime.sqlite-wal descriptors.
+    """
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return super().__exit__(exc_type, exc, tb)
+        finally:
+            self.close()
+
+
 def _path() -> str:
     return str(config.state_dir() / "uptime.sqlite")
 
 
 def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(_path(), timeout=10)
+    c = sqlite3.connect(_path(), timeout=10, factory=_ClosingConnection)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
     c.execute("PRAGMA busy_timeout=5000")
