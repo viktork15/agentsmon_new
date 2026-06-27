@@ -815,5 +815,11 @@ def serve(host: str, port: int) -> None:
             self.end_headers()
             self.wfile.write(body)
 
+    # Write a PID file so the launcher / installer can find and stop exactly THIS dashboard,
+    # instead of a broad `pkill -f "agentsmon dashboard"` that could match unrelated processes.
+    try:
+        (config.state_dir() / "dashboard.pid").write_text(str(os.getpid()), encoding="utf-8")
+    except OSError:
+        pass
     print(f"Agents Monitoring dashboard → http://{host}:{port}  (Ctrl-C to stop)")
     ThreadingHTTPServer((host, port), Handler).serve_forever()

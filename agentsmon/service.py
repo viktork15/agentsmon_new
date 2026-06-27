@@ -14,10 +14,66 @@ import sys
 import time
 from pathlib import Path
 
+import os
+import signal
+
 import agentsmon
 from . import config
 
 MARKER = "agentsmon-launch.sh"   # identifies our crontab lines
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def _stop_dashboard() -> None:
+    """Stop the running dashboard precisely via its PID file, then wait for the port to free.
+
+    Falls back to a tightened pgrep/pkill match only when no usable PID file exists, so we don't
+    rely on the broad ``-f "agentsmon dashboard"`` pattern that could match unrelated processes."""
+    pid_path = config.state_dir() / "dashboard.pid"
+    pid = None
+    try:
+        pid = int(pid_path.read_text("utf-8").strip())
+    except (OSError, ValueError):
+        pid = None
+
+    if pid and _pid_alive(pid):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+        for i in range(25):
+            if not _pid_alive(pid):
+                break
+            if i == 15:                       # stubborn → escalate to SIGKILL
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
+            time.sleep(0.3)
+        try:
+            pid_path.unlink()
+        except OSError:
+            pass
+        return
+
+    # No PID file (older install / never started): fall back to a precise command match.
+    if shutil.which("pkill"):
+        pat = "-m agentsmon dashboard"
+        subprocess.run(["pkill", "-f", "--", pat], capture_output=True)
+        for i in range(25):
+            gone = subprocess.run(["pgrep", "-f", "--", pat], capture_output=True).returncode != 0
+            if gone:
+                break
+            if i == 15:
+                subprocess.run(["pkill", "-9", "-f", "--", pat], capture_output=True)
+            time.sleep(0.3)
 
 
 def _python() -> str:
@@ -76,22 +132,8 @@ def install() -> int:
         return 1
     # Stop any dashboard already running, so the launcher restarts it with the CURRENT config
     # (host/port/auth). Without this, a re-run can't change a live dashboard — its pgrep guard
-    # would just leave the stale one bound to the old address. (Safe: our own process is
-    # "agentsmon setup/service", not "agentsmon dashboard".)
-    if shutil.which("pkill"):
-        subprocess.run(["pkill", "-f", "agentsmon dashboard"], capture_output=True)
-        # WAIT until the old dashboard is actually gone (and its port freed) before relaunching.
-        # Otherwise the launcher's pgrep guard still sees the dying process (so it skips starting a
-        # fresh one), or the new one hits "address already in use" and exits — either way the STALE
-        # pre-config dashboard keeps serving and changes like HTTP auth never take effect.
-        for i in range(25):
-            gone = subprocess.run(["pgrep", "-f", "agentsmon dashboard"],
-                                  capture_output=True).returncode != 0
-            if gone:
-                break
-            if i == 15:                       # stubborn → escalate to SIGKILL
-                subprocess.run(["pkill", "-9", "-f", "agentsmon dashboard"], capture_output=True)
-            time.sleep(0.3)
+    # would just leave the stale one bound to the old address.
+    _stop_dashboard()
     # Kick it once now so the dashboard comes up immediately on the configured host.
     subprocess.run(["sh", str(launcher)], capture_output=True)
     print("  ✓ installed cron launcher (@reboot + every minute) — survives logout/reboot.")
