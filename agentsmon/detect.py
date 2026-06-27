@@ -496,22 +496,28 @@ def _codex_model() -> str | None:
 ##NEW LINES
 
 def _hermes_model() -> str | None:
-    """Hermes default model from ~/.hermes/config.yaml."""
+    """Hermes default model (``model.default``) from ~/.hermes/config.yaml.
+
+    Parsed without PyYAML: the project ships zero dependencies, so ``import yaml`` would
+    silently fail in a clean environment and drop the Hermes tag to a wrong fallback. We only
+    need one scalar, so we walk the top-level ``model:`` block and read its ``default:`` key."""
     try:
-        from pathlib import Path
-        import yaml
-
-        cfg = yaml.safe_load(
-            (Path.home() / ".hermes" / "config.yaml").read_text("utf-8")
-        ) or {}
-
-        model = cfg.get("model") or {}
-        default = model.get("default")
-
-        return default if isinstance(default, str) else None
-
-    except Exception:
+        text = (Path.home() / ".hermes" / "config.yaml").read_text("utf-8")
+    except OSError:
         return None
+    in_model = False
+    for raw in text.splitlines():
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        key = raw.strip().split(":", 1)[0].strip()
+        if indent == 0:
+            in_model = (key == "model")        # entered/left the top-level model: block
+            continue
+        if in_model and key == "default" and ":" in raw:
+            val = raw.split(":", 1)[1].split("#", 1)[0].strip().strip('"').strip("'")
+            return val or None
+    return None
 
 ##NEW LINES
 
@@ -807,8 +813,8 @@ def daemon_status(daemons: list[dict]) -> list[dict]:
     out = []
     for d in daemons:
         pat = d.get("pattern", "")
-        proc_up = bool(pat) and _run(["pgrep", "-f", pat]) is not None and \
-            _run(["pgrep", "-f", pat]).returncode == 0
+        pg = _run(["pgrep", "-f", pat]) if pat else None   # single pgrep call (was run twice)
+        proc_up = pg is not None and pg.returncode == 0
         entry = {"name": d.get("name", pat), "pattern": pat, "process_up": proc_up}
         url = d.get("health_url")
         if url:

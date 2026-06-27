@@ -103,8 +103,15 @@ export AGENTSMON_CONFIG="{config.DEFAULT_PATH}"
 export AGENTSMON_STATE="{config.state_dir()}"
 PY="{_python()}"
 mkdir -p "{state}"
-pgrep -f "agentsmon dashboard" >/dev/null 2>&1 || \\
+PIDFILE="{state}/dashboard.pid"
+# Start the dashboard only if it isn't already running. Prefer the PID file (precise),
+# fall back to a tightened command match so a missing PID file can't spawn a duplicate.
+if {{ [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; }} || \\
+   pgrep -f -- "-m agentsmon dashboard" >/dev/null 2>&1; then
+  :
+else
   nohup "$PY" -m agentsmon dashboard >> "{log}" 2>&1 &
+fi
 "$PY" -m agentsmon keepalive >> "{log}" 2>&1
 """, encoding="utf-8")
     path.chmod(0o755)
