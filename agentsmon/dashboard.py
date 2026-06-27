@@ -373,7 +373,8 @@ _LOAD_HISTORY: deque[float] = deque(maxlen=40)
 
 def _read_cpu_total_idle() -> tuple[int, int] | None:
     try:
-        first = next(line for line in open("/proc/stat", "r", encoding="utf-8") if line.startswith("cpu "))
+        with open("/proc/stat", "r", encoding="utf-8") as fh:
+            first = next(line for line in fh if line.startswith("cpu "))
         vals = [int(x) for x in first.split()[1:]]
     except Exception:
         return None
