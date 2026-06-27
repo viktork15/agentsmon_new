@@ -698,11 +698,18 @@ def _state() -> bytes:
 
 def _probe_loop(stop: threading.Event) -> None:
     while not stop.is_set():
+        cfg = config.load()
+        pcfg = cfg.get("probe", {})
         try:
-            probe.probe_once(config.load())
+            probe.probe_once(cfg)
+            # Trim old probe rows so the table (and the full scans in uptime_seconds /
+            # history_seconds) stay bounded. Keep a margin beyond the SLA + timeline window.
+            retention_days = max(int(pcfg.get("sla_window_days", 90)),
+                                 int(pcfg.get("timeline_days", 90))) + 7
+            db.prune(retention_days * 86400)
         except Exception:
             pass
-        stop.wait(int(config.load().get("probe", {}).get("interval_seconds", 60)))
+        stop.wait(int(pcfg.get("interval_seconds", 60)))
 
 
 def serve(host: str, port: int) -> None:

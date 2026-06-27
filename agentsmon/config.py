@@ -38,16 +38,6 @@ DEFAULTS = {
 }
 
 
-def _expand(obj):
-    if isinstance(obj, str):
-        return os.path.expanduser(os.path.expandvars(obj))
-    if isinstance(obj, list):
-        return [_expand(x) for x in obj]
-    if isinstance(obj, dict):
-        return {k: _expand(v) for k, v in obj.items()}
-    return obj
-
-
 def load(path: Path | None = None) -> dict:
     path = path or DEFAULT_PATH
     cfg = json.loads(json.dumps(DEFAULTS))   # deep copy

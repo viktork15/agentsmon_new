@@ -138,11 +138,19 @@ def tick(cfg: dict) -> int:
 
 
 def run(loop: bool = False) -> int:
-    cfg = config.load()
-    if not cfg.get("keepalive", {}).get("enabled", True):
-        return 0                       # keepalive disabled — restarts left to the user/another supervisor
-    interval = cfg.get("keepalive", {}).get("interval_seconds", 60)
+    # Reload config every pass: in long-lived loop mode the dashboard may toggle an
+    # agent's enabled flag (Stop/Restart) or disable keepalive entirely, and those
+    # edits must be honored without restarting this process (#stale-config fix).
     while True:
+        cfg = config.load()
+        kcfg = cfg.get("keepalive", {})
+        interval = kcfg.get("interval_seconds", 60)
+        if not kcfg.get("enabled", True):
+            # keepalive disabled — restarts left to the user/another supervisor
+            if not loop:
+                return 0
+            time.sleep(interval)
+            continue
         if _acquire_lock():
             try:
                 n = tick(cfg)
