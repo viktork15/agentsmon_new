@@ -8,9 +8,17 @@ concurrent read while the probe thread writes).
 from __future__ import annotations
 
 import sqlite3
+import threading
 import time
 
 from . import config
+
+# Schema (table + index + WAL) only needs to be set up once per process. Running
+# the DDL on every connection is wasted work since the dashboard opens a fresh
+# connection per helper call. ``journal_mode=WAL`` persists in the DB file, so
+# later connections inherit it without re-issuing the pragma.
+_SCHEMA_READY = False
+_SCHEMA_LOCK = threading.Lock()
 
 
 class _ClosingConnection(sqlite3.Connection):
@@ -33,14 +41,19 @@ def _path() -> str:
 
 
 def _conn() -> sqlite3.Connection:
+    global _SCHEMA_READY
     c = sqlite3.connect(_path(), timeout=10, factory=_ClosingConnection)
     c.row_factory = sqlite3.Row
-    c.execute("PRAGMA journal_mode=WAL")
-    c.execute("PRAGMA busy_timeout=5000")
-    c.execute("""CREATE TABLE IF NOT EXISTS probes(
-        ts INTEGER NOT NULL, service TEXT NOT NULL, up INTEGER NOT NULL,
-        latency REAL, detail TEXT)""")
-    c.execute("CREATE INDEX IF NOT EXISTS idx_probes_service_ts ON probes(service, ts)")
+    c.execute("PRAGMA busy_timeout=5000")   # per-connection, must be set every time
+    if not _SCHEMA_READY:
+        with _SCHEMA_LOCK:
+            if not _SCHEMA_READY:           # double-checked: only the first connection sets up schema
+                c.execute("PRAGMA journal_mode=WAL")
+                c.execute("""CREATE TABLE IF NOT EXISTS probes(
+                    ts INTEGER NOT NULL, service TEXT NOT NULL, up INTEGER NOT NULL,
+                    latency REAL, detail TEXT)""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_probes_service_ts ON probes(service, ts)")
+                _SCHEMA_READY = True
     return c
 
 
@@ -129,3 +142,22 @@ def timeline(service: str, window_seconds: int, buckets: int) -> list[dict]:
         out.append({"start": start + i * size,
                     "uptime_pct": (round(100.0 * up / total, 2) if total else None)})
     return out
+
+
+def prune(retention_seconds: int) -> int:
+    """Delete probe rows older than *retention_seconds* and return the rows removed.
+
+    Without this the ``probes`` table grows forever (≈1 row/service/probe-interval),
+    and the full-table scans in :func:`uptime_seconds` / :func:`history_seconds` get
+    slower over time. Keeping a window that comfortably covers the SLA + timeline
+    range preserves every metric the dashboard shows. Cheap thanks to the
+    ``(service, ts)`` index. Best-effort: never raises."""
+    if retention_seconds <= 0:
+        return 0
+    cutoff = int(time.time()) - retention_seconds
+    try:
+        with _conn() as c:
+            cur = c.execute("DELETE FROM probes WHERE ts < ?", (cutoff,))
+            return cur.rowcount or 0
+    except Exception:
+        return 0
