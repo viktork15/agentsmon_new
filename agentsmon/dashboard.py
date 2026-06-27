@@ -775,6 +775,20 @@ def serve(host: str, port: int) -> None:
                 self.send_response(404)
                 self.end_headers()
                 return
+            # CSRF guard: require a custom header our own page sends. A cross-site HTML
+            # form/img can carry the browser's cached Basic-auth creds, but cannot set a
+            # custom header without a CORS preflight this server never approves. We also
+            # reject the form content-types a simple cross-site POST is limited to.
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            form_types = ("application/x-www-form-urlencoded", "multipart/form-data", "text/plain")
+            if self.headers.get("X-Requested-With") != "agentsmon" or ctype in form_types:
+                body = json.dumps({"ok": False, "error": "forbidden (CSRF check failed)"}).encode()
+                self.send_response(403)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             length = int(self.headers.get("Content-Length", 0) or 0)
             raw = self.rfile.read(length) if length else b""
             params = {}

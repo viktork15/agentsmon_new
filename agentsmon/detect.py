@@ -18,6 +18,7 @@ import sqlite3
 import subprocess
 import time
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -652,6 +653,7 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
     procs, children = _proc_table()
     codex_model = _codex_model()
     agents = []
+    claimed_claude: set[str] = set()   # transcript ids already assigned this pass (same-cwd disambiguation)
     for s in tmux_sessions():
         pids = _pane_pids(s["name"])
         tree = _subtree(pids, children)
@@ -675,7 +677,7 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
         # the concrete model by cwd, so both show up (just like Codex does).
         if kind == "claude-code":
             cwd = _session_cwd(s["name"])
-            csid, cmodel = _claude_info_for_cwd(cwd) if cwd else (None, None)
+            csid, cmodel = _claude_info_for_cwd(cwd, s.get("created"), claimed_claude) if cwd else (None, None)
             if sid is None:
                 sid = csid
             if cmodel:
