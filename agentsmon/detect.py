@@ -300,16 +300,13 @@ def _claude_model_from_transcript(path: str) -> str | None:
     except OSError:
         return None
 
-        # Claude Code >= 2.1
-    matches = re.findall(r"Set model to\s+([^(<\n]+)", data, re.IGNORECASE)
+        # Claude Code >= 2.1 — require "and saved" so we don't match mentions of model names
+        # in the conversation body (e.g. assistant diagnostic text that says "Set model to X").
+    matches = re.findall(r"Set model to\s+([^\n]+?)\s+and\s+saved\b", data, re.IGNORECASE)
     if matches:
         name = matches[-1].strip()
 
         name = re.sub(r'\\u001b\[[0-9;]*m', '', name)
-        name = re.sub(r'\s+and saved.*$', '', name, flags=re.IGNORECASE)
-
-#        if not name.lower().startswith("claude"):
-#            name = "Claude " + name
 
         return name.strip()
 
