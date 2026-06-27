@@ -109,7 +109,7 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
           <span class="health-value text-base font-semibold leading-none">–</span>
         </div>
         <p class="health-sub truncate text-[10px] text-slate-400 mt-1">–</p>
-        <svg class="health-spark mt-1.5 w-full h-5 text-amber-500" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline fill="none" stroke="currentColor" stroke-width="2" points=""></polyline></svg>
+        <svg class="health-spark mt-1.5 w-full h-5 text-emerald-500" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline fill="none" stroke="currentColor" stroke-width="2" points=""></polyline></svg>
       </div>
       <div class="health-card rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0" data-health-card="uptime">
         <div class="flex items-center gap-1.5 min-w-0"><svg class="h-4 w-4 shrink-0 text-teal-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg><p class="truncate text-[10px] uppercase tracking-wide text-slate-400">Uptime</p></div>
@@ -117,7 +117,7 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
         <p class="health-sub truncate text-[10px] text-slate-400 mt-1">since restart</p>
       </div>
       <div class="health-card rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0" data-health-card="docker">
-        <div class="flex items-center gap-1.5 min-w-0"><svg class="h-4 w-4 shrink-0 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h16l-2 4H7a3 3 0 0 1-3-3v-1Z"/><path d="M7 10h3v4H7zM10 10h3v4h-3zM13 10h3v4h-3zM10 6h3v4h-3z"/></svg><p class="truncate text-[10px] uppercase tracking-wide text-slate-400">Docker</p></div>
+        <div class="flex items-center gap-1.5 min-w-0"><svg class="h-4 w-4 shrink-0 text-blue-500" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.2 6.4h2.7v2.7h1.4c.7 0 1.4.2 2 .6.2-.8.7-1.5 1.4-2 .1-.1.3-.1.4 0 .6.5.9 1.3.8 2.1.6.1 1.1.4 1.6.8.1.1.1.3 0 .4-.8.5-1.6.7-2.4.7H3.2c-.3 0-.5.2-.4.5.4 2.9 2.4 5 5.9 5h5.8c2.8 0 4.9-1.3 6-3.6.1-.2 0-.4-.3-.4H2.4c-.2 0-.4-.2-.4-.4v-.7c0-.2.2-.4.4-.4h2.1V9.2h2.7V6.5h2.7V3.8h3.3v2.6Zm-5.3 2.8H5.2v2.1h2.7V9.2Zm3.3 0H8.5v2.1h2.7V9.2Zm3.3 0h-2.7v2.1h2.7V9.2Zm-3.3-3.3H8.5V8h2.7V5.9Zm3.3 0h-2.7V8h2.7V5.9Z"/></svg><p class="truncate text-[10px] uppercase tracking-wide text-slate-400">Docker</p></div>
         <p class="health-value truncate text-base font-semibold leading-none mt-1.5">–</p>
         <p class="health-sub truncate text-[10px] text-slate-400 mt-1">–</p>
       </div>
