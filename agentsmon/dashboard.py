@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import threading
 import time
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import config, db, detect, keepalive, probe
@@ -69,6 +70,46 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
       </table>
     </div>
     <p class="text-[11px] text-slate-400 mt-2">tmux sessions running an agent, linked by their <code>--resume</code> session id</p>
+  </section>
+
+  <section class="mb-6" data-svc="server-health">
+    <div class="server-health-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 bg-white border-slate-200">
+      <span class="server-health-dot h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
+      <h2 class="text-base font-semibold">Server Health</h2>
+      <span class="server-health-state ml-auto text-sm font-medium text-slate-400">loading…</span>
+    </div>
+    <div id="server-health-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
+      <div class="rounded-lg border border-slate-200 bg-white p-3" data-health-card="cpu">
+        <div class="flex items-center justify-between"><p class="text-[11px] uppercase tracking-wide text-slate-400">CPU</p><span class="health-value text-lg font-semibold">–</span></div>
+        <p class="health-sub text-[11px] text-slate-400 mt-0.5">–</p>
+        <svg class="health-spark mt-2 w-full h-8 text-emerald-500" viewBox="0 0 100 32" preserveAspectRatio="none"><polyline fill="none" stroke="currentColor" stroke-width="2" points=""></polyline></svg>
+      </div>
+      <div class="rounded-lg border border-slate-200 bg-white p-3" data-health-card="ram">
+        <div class="flex items-center justify-between"><p class="text-[11px] uppercase tracking-wide text-slate-400">RAM</p><span class="health-value text-lg font-semibold">–</span></div>
+        <p class="health-sub text-[11px] text-slate-400 mt-0.5">–</p>
+        <div class="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden"><div class="health-bar h-full rounded-full bg-emerald-500 transition-all" style="width:0%"></div></div>
+      </div>
+      <div class="rounded-lg border border-slate-200 bg-white p-3" data-health-card="disk">
+        <div class="flex items-center justify-between"><p class="text-[11px] uppercase tracking-wide text-slate-400">Disk</p><span class="health-value text-lg font-semibold">–</span></div>
+        <p class="health-sub text-[11px] text-slate-400 mt-0.5">–</p>
+        <div class="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden"><div class="health-bar h-full rounded-full bg-sky-500 transition-all" style="width:0%"></div></div>
+      </div>
+      <div class="rounded-lg border border-slate-200 bg-white p-3" data-health-card="load">
+        <div class="flex items-center justify-between"><p class="text-[11px] uppercase tracking-wide text-slate-400">Load Avg</p><span class="health-value text-lg font-semibold">–</span></div>
+        <p class="health-sub text-[11px] text-slate-400 mt-0.5">–</p>
+        <svg class="health-spark mt-2 w-full h-8 text-sky-500" viewBox="0 0 100 32" preserveAspectRatio="none"><polyline fill="none" stroke="currentColor" stroke-width="2" points=""></polyline></svg>
+      </div>
+      <div class="rounded-lg border border-slate-200 bg-white p-3" data-health-card="uptime">
+        <p class="text-[11px] uppercase tracking-wide text-slate-400">Uptime</p>
+        <p class="health-value text-lg font-semibold mt-0.5">–</p>
+        <p class="health-sub text-[11px] text-slate-400">since last restart</p>
+      </div>
+      <div class="rounded-lg border border-slate-200 bg-white p-3" data-health-card="docker">
+        <p class="text-[11px] uppercase tracking-wide text-slate-400">Docker</p>
+        <p class="health-value text-lg font-semibold mt-0.5">–</p>
+        <p class="health-sub text-[11px] text-slate-400">–</p>
+      </div>
+    </div>
   </section>
 
   <div id="services"></div>
@@ -135,6 +176,42 @@ function fmtTime(u){return u?new Date(u*1000).toLocaleString():"";}
 function fmtLat(ms){return ms==null?"–":(ms<1?"<1 ms":ms+" ms");}
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const q=(r,s)=>r.querySelector(s);
+
+function pctClass(p){return p>=90?"bg-rose-500":p>=75?"bg-amber-500":"bg-emerald-500";}
+function pctTextClass(p){return p>=90?"text-rose-600":p>=75?"text-amber-600":"text-slate-800";}
+function fmtGb(n){return n==null?"–":(n>=100?Math.round(n):n.toFixed(1))+" GB";}
+function sparkPoints(values, maxVal){
+  if(!values || !values.length) return "";
+  const max=Math.max(maxVal||0, ...values, 1);
+  return values.map((v,i)=>{
+    const x=values.length===1?100:(i/(values.length-1))*100;
+    const y=30-(Math.max(0,Math.min(v,max))/max)*26;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+}
+function setCard(kind, value, sub, percent, history, historyMax){
+  const card=document.querySelector(`[data-health-card="${kind}"]`); if(!card) return;
+  const val=q(card,".health-value"), subEl=q(card,".health-sub");
+  val.textContent=value; subEl.textContent=sub;
+  if(percent!=null) val.className="health-value text-lg font-semibold "+pctTextClass(percent);
+  const bar=q(card,".health-bar");
+  if(bar && percent!=null){ bar.style.width=Math.max(0,Math.min(100,percent))+"%"; bar.className="health-bar h-full rounded-full transition-all "+pctClass(percent); }
+  const line=q(card,"polyline"); if(line) line.setAttribute("points", sparkPoints(history||[], historyMax));
+}
+function renderServerHealth(h){
+  const root=document.querySelector('section[data-svc="server-health"]'); if(!root) return;
+  const ok=h && h.status==="operational";
+  q(root,".server-health-head").className="server-health-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 "+(ok?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200");
+  q(root,".server-health-dot").className="server-health-dot h-3 w-3 rounded-full shrink-0 "+(ok?"bg-emerald-500":"bg-slate-300");
+  const st=q(root,".server-health-state"); st.textContent=ok?"Operational":"No data"; st.className="server-health-state ml-auto text-sm font-medium "+(ok?"text-emerald-600":"text-slate-400");
+  if(!h) return;
+  setCard("cpu", `${Math.round(h.cpu.percent)} %`, `${h.cpu.used_cores.toFixed(1)} / ${h.cpu.total_cores} cores`, h.cpu.percent, h.cpu.history, 100);
+  setCard("ram", `${Math.round(h.ram.percent)} %`, `${fmtGb(h.ram.used_gb)} / ${fmtGb(h.ram.total_gb)}`, h.ram.percent);
+  setCard("disk", `${Math.round(h.disk.percent)} %`, `${fmtGb(h.disk.used_gb)} / ${fmtGb(h.disk.total_gb)}`, h.disk.percent);
+  setCard("load", h.load.current.toFixed(2), `${h.load.one.toFixed(2)} / ${h.load.five.toFixed(2)} / ${h.load.fifteen.toFixed(2)}`, null, h.load.history, Math.max(h.cpu.total_cores, 1));
+  setCard("uptime", h.uptime.formatted, "since last restart");
+  setCard("docker", h.docker.running?"Running":"Unavailable", h.docker.running?`${h.docker.containers} container${h.docker.containers===1?"":"s"}`:(h.docker.detail||"docker not reachable"));
+}
 
 function renderTimeline(root, buckets, windowDays){
   const tl=q(root,".svc-timeline"); tl.innerHTML=""; const GREEN=99;
@@ -236,6 +313,7 @@ async function refresh(){
   try{
     const d=await (await fetch("/api/state",{credentials:"same-origin"})).json();
     renderAgents(document.querySelector('section[data-svc="agents"]'), d.agents);
+    renderServerHealth(d.server_health);
     const box=document.getElementById("services"); const tpl=document.getElementById("svc-tpl");
     if(box.childElementCount!==d.services.length){
       box.innerHTML=""; d.services.forEach(()=>box.appendChild(tpl.content.cloneNode(true)));
@@ -285,6 +363,124 @@ document.addEventListener("click", async e=>{
 });
 refresh(); setInterval(refresh, POLL*1000);
 </script></body></html>"""
+
+
+
+_CPU_PREV: tuple[int, int] | None = None
+_CPU_HISTORY: deque[float] = deque(maxlen=40)
+_LOAD_HISTORY: deque[float] = deque(maxlen=40)
+
+
+def _read_cpu_total_idle() -> tuple[int, int] | None:
+    try:
+        first = next(line for line in open("/proc/stat", "r", encoding="utf-8") if line.startswith("cpu "))
+        vals = [int(x) for x in first.split()[1:]]
+    except Exception:
+        return None
+    idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
+    return sum(vals), idle
+
+
+def _read_meminfo() -> dict[str, int]:
+    out: dict[str, int] = {}
+    try:
+        with open("/proc/meminfo", "r", encoding="utf-8") as fh:
+            for line in fh:
+                key, _, rest = line.partition(":")
+                out[key] = int(rest.strip().split()[0]) * 1024
+    except Exception:
+        pass
+    return out
+
+
+def _read_uptime_seconds() -> int | None:
+    try:
+        with open("/proc/uptime", "r", encoding="utf-8") as fh:
+            return int(float(fh.read().split()[0]))
+    except Exception:
+        return None
+
+
+def _fmt_uptime(seconds: int | None) -> str:
+    if seconds is None:
+        return "–"
+    d, r = divmod(int(seconds), 86400)
+    h, r = divmod(r, 3600)
+    m = r // 60
+    if d:
+        return f"{d}d {h}h"
+    if h:
+        return f"{h}h {m}m"
+    return f"{m}m"
+
+
+def _docker_state() -> dict:
+    docker = shutil.which("docker")
+    if not docker:
+        return {"running": False, "containers": 0, "detail": "docker CLI missing"}
+    try:
+        proc = subprocess.run([docker, "ps", "--format", "{{.ID}}"], capture_output=True, text=True,
+                              timeout=2)
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "docker not reachable").strip().splitlines()[0][:80]
+            return {"running": False, "containers": 0, "detail": detail}
+        containers = len([ln for ln in proc.stdout.splitlines() if ln.strip()])
+        return {"running": True, "containers": containers, "detail": "ok"}
+    except Exception as exc:
+        return {"running": False, "containers": 0, "detail": str(exc)[:80]}
+
+
+def _server_health_state() -> dict:
+    global _CPU_PREV
+    cores = os.cpu_count() or 1
+    cpu_now = _read_cpu_total_idle()
+    cpu_pct = 0.0
+    if cpu_now and _CPU_PREV:
+        total_delta = max(cpu_now[0] - _CPU_PREV[0], 1)
+        idle_delta = max(cpu_now[1] - _CPU_PREV[1], 0)
+        cpu_pct = max(0.0, min(100.0, 100.0 * (1.0 - (idle_delta / total_delta))))
+    elif cpu_now:
+        # First request has no previous sample; keep it calm and fill history on the next poll.
+        cpu_pct = 0.0
+    if cpu_now:
+        _CPU_PREV = cpu_now
+    _CPU_HISTORY.append(round(cpu_pct, 1))
+
+    mem = _read_meminfo()
+    total_mem = mem.get("MemTotal", 0)
+    avail_mem = mem.get("MemAvailable", 0)
+    used_mem = max(total_mem - avail_mem, 0) if total_mem else 0
+    ram_pct = (used_mem / total_mem * 100.0) if total_mem else 0.0
+
+    try:
+        du = shutil.disk_usage("/")
+        disk_total, disk_used = du.total, du.used
+        disk_pct = disk_used / disk_total * 100.0 if disk_total else 0.0
+    except Exception:
+        disk_total = disk_used = 0
+        disk_pct = 0.0
+
+    try:
+        load1, load5, load15 = os.getloadavg()
+    except Exception:
+        load1 = load5 = load15 = 0.0
+    _LOAD_HISTORY.append(round(load1, 2))
+
+    uptime = _read_uptime_seconds()
+    gb = 1024 ** 3
+    return {
+        "status": "operational",
+        "cpu": {"percent": round(cpu_pct, 1), "used_cores": round(cpu_pct / 100.0 * cores, 1),
+                "total_cores": cores, "history": list(_CPU_HISTORY)},
+        "ram": {"percent": round(ram_pct, 1), "used_gb": round(used_mem / gb, 1),
+                "total_gb": round(total_mem / gb, 1)},
+        "disk": {"percent": round(disk_pct, 1), "used_gb": round(disk_used / gb, 1),
+                 "total_gb": round(disk_total / gb, 1), "path": "/"},
+        "load": {"current": round(load1, 2), "one": round(load1, 2), "five": round(load5, 2),
+                 "fifteen": round(load15, 2), "history": list(_LOAD_HISTORY)},
+        "uptime": {"seconds": uptime, "formatted": _fmt_uptime(uptime)},
+        "docker": _docker_state(),
+    }
 
 
 def _service_state(cfg: dict, running_agents: int = 0) -> list[dict]:
@@ -426,7 +622,8 @@ def _state() -> bytes:
     for s in services:
         s["system_latency_ms"] = sysavg
         s["system_latency_n"] = len(lat_by_url)
-    data = {"time": int(time.time()), "agents": agents, "services": services}
+    data = {"time": int(time.time()), "agents": agents, "services": services,
+            "server_health": _server_health_state()}
     return json.dumps(data).encode()
 
 
