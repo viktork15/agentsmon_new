@@ -160,15 +160,23 @@ hash (`dashboard.auth.pwhash`), never in plaintext. Remove the `auth` block to t
   recreate the tmux session). Without it, a dead agent can be detected but not revived.
 - **daemons[].restart** — optional command to run when the daemon is down.
 - **dashboard.host** — keep `127.0.0.1` for local-only; set a VPN/LAN address to reach it
-  remotely (then protect it with your firewall — the dashboard has no auth).
+  remotely (also enable the HTTP login in setup and protect it with your firewall).
 
 ---
 
 ## Security note
 
-The dashboard is **read-only**. Bind it to `127.0.0.1` (default) or a trusted VPN address, never
-the public internet. If you expose it beyond localhost, enable the **HTTP login** in setup
-(stored as a SHA-256 hash). Restart commands run as your user.
+The dashboard is **not read-only**: it exposes a `POST /api/agent/action` endpoint that can
+**restart or stop** agents (per-row ↻ / ✕ buttons). Restart/stop commands run as your user.
+
+Protect it accordingly:
+
+- Bind it to `127.0.0.1` (default) or a trusted VPN address, **never** the public internet.
+- If you expose it beyond localhost, enable the **HTTP login** in setup (Basic auth; the password
+  is stored as a SHA-256 hash).
+- The state-changing endpoint is CSRF-guarded — it requires a custom request header that the page
+  sends and that cross-site HTML forms cannot set, so a logged-in browser can't be tricked into
+  issuing actions from another site.
 
 ---
 
