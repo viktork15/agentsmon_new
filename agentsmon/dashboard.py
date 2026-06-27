@@ -331,7 +331,7 @@ async function refresh(){
   try{
     const d=await (await fetch("/api/state",{credentials:"same-origin"})).json();
     renderAgents(document.querySelector('section[data-svc="agents"]'), d.agents);
-    if(d.server_health) renderServerHealth(d.server_health);
+    // Server health is rendered by refreshHealth() via its own /api/server-health poll.
     const box=document.getElementById("services"); const tpl=document.getElementById("svc-tpl");
     if(box.childElementCount!==d.services.length){
       box.innerHTML=""; d.services.forEach(()=>box.appendChild(tpl.content.cloneNode(true)));
@@ -388,6 +388,22 @@ _CPU_PREV: tuple[int, int] | None = None
 _CPU_HISTORY: deque[float] = deque(maxlen=40)
 _LOAD_HISTORY: deque[float] = deque(maxlen=40)
 
+# Server-health sampling is driven by a single client poll (``/api/server-health``),
+# but ThreadingHTTPServer can still run two requests at once. The lock serialises
+# the read-modify-write of the CPU/load history globals, and the short TTL cache
+# stops a burst of near-simultaneous polls from sampling CPU over a near-zero delta
+# (which would spike the reading) or appending duplicate history points.
+_HEALTH_LOCK = threading.Lock()
+_HEALTH_CACHE: dict | None = None
+_HEALTH_CACHE_TS: float = 0.0
+_HEALTH_MIN_INTERVAL = 1.0
+
+# Docker state changes slowly; shell out to `docker ps` at most this often and reuse
+# the result in between (the health endpoint is polled every few seconds).
+_DOCKER_CACHE: dict | None = None
+_DOCKER_CACHE_TS: float = 0.0
+_DOCKER_TTL = 12.0
+
 
 def _read_cpu_total_idle() -> tuple[int, int] | None:
     try:
@@ -434,6 +450,18 @@ def _fmt_uptime(seconds: int | None) -> str:
 
 
 def _docker_state() -> dict:
+    """Docker status, cached for ``_DOCKER_TTL`` seconds so we don't spawn a
+    ``docker ps`` subprocess on every health poll."""
+    global _DOCKER_CACHE, _DOCKER_CACHE_TS
+    now = time.monotonic()
+    if _DOCKER_CACHE is not None and (now - _DOCKER_CACHE_TS) < _DOCKER_TTL:
+        return _DOCKER_CACHE
+    _DOCKER_CACHE = _probe_docker()
+    _DOCKER_CACHE_TS = now
+    return _DOCKER_CACHE
+
+
+def _probe_docker() -> dict:
     docker = shutil.which("docker")
     if not docker:
         return {"running": False, "containers": 0, "detail": "docker CLI missing"}
@@ -450,6 +478,19 @@ def _docker_state() -> dict:
 
 
 def _server_health_state() -> dict:
+    """Thread-safe, rate-limited entry point. Serialises sampling and reuses a
+    sub-second cache so concurrent polls can't corrupt the CPU delta / history."""
+    global _HEALTH_CACHE, _HEALTH_CACHE_TS
+    with _HEALTH_LOCK:
+        now = time.monotonic()
+        if _HEALTH_CACHE is not None and (now - _HEALTH_CACHE_TS) < _HEALTH_MIN_INTERVAL:
+            return _HEALTH_CACHE
+        _HEALTH_CACHE = _compute_server_health()
+        _HEALTH_CACHE_TS = now
+        return _HEALTH_CACHE
+
+
+def _compute_server_health() -> dict:
     global _CPU_PREV
     cores = os.cpu_count() or 1
     cpu_now = _read_cpu_total_idle()
@@ -489,6 +530,8 @@ def _server_health_state() -> dict:
     gb = 1024 ** 3
     return {
         "status": "operational",
+        # used_cores is the effective number of busy cores derived from the live
+        # CPU% (cpu_pct% of `cores`), kept consistent with the headline percentage.
         "cpu": {"percent": round(cpu_pct, 1), "used_cores": round(cpu_pct / 100.0 * cores, 1),
                 "total_cores": cores, "history": list(_CPU_HISTORY)},
         "ram": {"percent": round(ram_pct, 1), "used_gb": round(used_mem / gb, 1),
@@ -645,8 +688,11 @@ def _state() -> bytes:
     for s in services:
         s["system_latency_ms"] = sysavg
         s["system_latency_n"] = len(lat_by_url)
-    data = {"time": int(time.time()), "agents": agents, "services": services,
-            "server_health": _server_health_state()}
+    # Note: server health is intentionally NOT included here. The page polls the
+    # dedicated /api/server-health endpoint on its own (faster) cadence; sampling
+    # it from two endpoints would compute the CPU delta over inconsistent
+    # intervals and double-append the sparkline history.
+    data = {"time": int(time.time()), "agents": agents, "services": services}
     return json.dumps(data).encode()
 
 
