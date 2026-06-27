@@ -246,7 +246,7 @@ function renderService(root, s){
   const se=q(root,".svc-state"); se.textContent=st[1]; se.className="svc-state ml-auto text-sm font-medium "+st[2];
   q(root,".m-uptime").textContent=fmtDuration(s.uptime_seconds);
   q(root,".m-sla").textContent=s.sla!=null?s.sla.toFixed(2)+" %":"–";
-  q(root,".m-sla-sub").textContent="over "+s.sla_window_days+" days ("+(s.sla_samples||0)+" samples)";
+  q(root,".m-sla-sub").textContent=s.sla_window_days+"d · "+(s.sla_samples||0)+" samples";
   if(s.metric==="agents"){
     q(root,".m-x-label").textContent="Agents";
     q(root,".m-x").textContent=(s.metric_value!=null?s.metric_value:"–")+(s.metric_value!=null?" running":"");
