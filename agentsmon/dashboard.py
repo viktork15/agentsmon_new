@@ -73,41 +73,53 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
   </section>
 
   <section class="mb-6" data-svc="server-health">
-    <div class="server-health-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 bg-white border-slate-200">
+    <div class="server-health-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 bg-white border-slate-200">
       <span class="server-health-dot h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
       <h2 class="text-base font-semibold">Server Health</h2>
       <span class="server-health-state ml-auto text-sm font-medium text-slate-400">loading…</span>
     </div>
-    <div id="server-health-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
-      <div class="rounded-lg border border-slate-200 bg-white p-3" data-health-card="cpu">
-        <div class="flex items-center justify-between"><p class="text-[11px] uppercase tracking-wide text-slate-400">CPU</p><span class="health-value text-lg font-semibold">–</span></div>
-        <p class="health-sub text-[11px] text-slate-400 mt-0.5">–</p>
-        <svg class="health-spark mt-2 w-full h-8 text-emerald-500" viewBox="0 0 100 32" preserveAspectRatio="none"><polyline fill="none" stroke="currentColor" stroke-width="2" points=""></polyline></svg>
+    <div id="server-health-cards" class="grid grid-cols-6 gap-2 mb-3">
+      <div class="health-card rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0" data-health-card="cpu">
+        <div class="flex items-center justify-between gap-1.5">
+          <div class="flex items-center gap-1.5 min-w-0"><svg class="h-4 w-4 shrink-0 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M4 10h3M4 14h3M17 10h3M17 14h3M10 4v3M14 4v3M10 17v3M14 17v3"/></svg><p class="truncate text-[10px] uppercase tracking-wide text-slate-400">CPU</p></div>
+          <span class="health-value text-base font-semibold leading-none">–</span>
+        </div>
+        <p class="health-sub truncate text-[10px] text-slate-400 mt-1">–</p>
+        <svg class="health-spark mt-1.5 w-full h-5 text-emerald-500" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline fill="none" stroke="currentColor" stroke-width="2" points=""></polyline></svg>
       </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-3" data-health-card="ram">
-        <div class="flex items-center justify-between"><p class="text-[11px] uppercase tracking-wide text-slate-400">RAM</p><span class="health-value text-lg font-semibold">–</span></div>
-        <p class="health-sub text-[11px] text-slate-400 mt-0.5">–</p>
-        <div class="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden"><div class="health-bar h-full rounded-full bg-emerald-500 transition-all" style="width:0%"></div></div>
+      <div class="health-card rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0" data-health-card="ram">
+        <div class="flex items-center justify-between gap-1.5">
+          <div class="flex items-center gap-1.5 min-w-0"><svg class="h-4 w-4 shrink-0 text-violet-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="7" width="14" height="10" rx="2"/><path d="M8 7V4M12 7V4M16 7V4M8 20v-3M12 20v-3M16 20v-3M3 10h2M3 14h2M19 10h2M19 14h2"/></svg><p class="truncate text-[10px] uppercase tracking-wide text-slate-400">RAM</p></div>
+          <span class="health-value text-base font-semibold leading-none">–</span>
+        </div>
+        <p class="health-sub truncate text-[10px] text-slate-400 mt-1">–</p>
+        <div class="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="health-bar h-full rounded-full bg-emerald-500 transition-all" style="width:0%"></div></div>
       </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-3" data-health-card="disk">
-        <div class="flex items-center justify-between"><p class="text-[11px] uppercase tracking-wide text-slate-400">Disk</p><span class="health-value text-lg font-semibold">–</span></div>
-        <p class="health-sub text-[11px] text-slate-400 mt-0.5">–</p>
-        <div class="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden"><div class="health-bar h-full rounded-full bg-sky-500 transition-all" style="width:0%"></div></div>
+      <div class="health-card rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0" data-health-card="disk">
+        <div class="flex items-center justify-between gap-1.5">
+          <div class="flex items-center gap-1.5 min-w-0"><svg class="h-4 w-4 shrink-0 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3Z"/><path d="M8 16h8M8 8h8"/><circle cx="17" cy="16" r="1"/></svg><p class="truncate text-[10px] uppercase tracking-wide text-slate-400">Disk</p></div>
+          <span class="health-value text-base font-semibold leading-none">–</span>
+        </div>
+        <p class="health-sub truncate text-[10px] text-slate-400 mt-1">–</p>
+        <div class="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="health-bar h-full rounded-full bg-sky-500 transition-all" style="width:0%"></div></div>
       </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-3" data-health-card="load">
-        <div class="flex items-center justify-between"><p class="text-[11px] uppercase tracking-wide text-slate-400">Load Avg</p><span class="health-value text-lg font-semibold">–</span></div>
-        <p class="health-sub text-[11px] text-slate-400 mt-0.5">–</p>
-        <svg class="health-spark mt-2 w-full h-8 text-sky-500" viewBox="0 0 100 32" preserveAspectRatio="none"><polyline fill="none" stroke="currentColor" stroke-width="2" points=""></polyline></svg>
+      <div class="health-card rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0" data-health-card="load">
+        <div class="flex items-center justify-between gap-1.5">
+          <div class="flex items-center gap-1.5 min-w-0"><svg class="h-4 w-4 shrink-0 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg><p class="truncate text-[10px] uppercase tracking-wide text-slate-400">Load</p></div>
+          <span class="health-value text-base font-semibold leading-none">–</span>
+        </div>
+        <p class="health-sub truncate text-[10px] text-slate-400 mt-1">–</p>
+        <svg class="health-spark mt-1.5 w-full h-5 text-amber-500" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline fill="none" stroke="currentColor" stroke-width="2" points=""></polyline></svg>
       </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-3" data-health-card="uptime">
-        <p class="text-[11px] uppercase tracking-wide text-slate-400">Uptime</p>
-        <p class="health-value text-lg font-semibold mt-0.5">–</p>
-        <p class="health-sub text-[11px] text-slate-400">since last restart</p>
+      <div class="health-card rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0" data-health-card="uptime">
+        <div class="flex items-center gap-1.5 min-w-0"><svg class="h-4 w-4 shrink-0 text-teal-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg><p class="truncate text-[10px] uppercase tracking-wide text-slate-400">Uptime</p></div>
+        <p class="health-value truncate text-base font-semibold leading-none mt-1.5">–</p>
+        <p class="health-sub truncate text-[10px] text-slate-400 mt-1">since restart</p>
       </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-3" data-health-card="docker">
-        <p class="text-[11px] uppercase tracking-wide text-slate-400">Docker</p>
-        <p class="health-value text-lg font-semibold mt-0.5">–</p>
-        <p class="health-sub text-[11px] text-slate-400">–</p>
+      <div class="health-card rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0" data-health-card="docker">
+        <div class="flex items-center gap-1.5 min-w-0"><svg class="h-4 w-4 shrink-0 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h16l-2 4H7a3 3 0 0 1-3-3v-1Z"/><path d="M7 10h3v4H7zM10 10h3v4h-3zM13 10h3v4h-3zM10 6h3v4h-3z"/></svg><p class="truncate text-[10px] uppercase tracking-wide text-slate-400">Docker</p></div>
+        <p class="health-value truncate text-base font-semibold leading-none mt-1.5">–</p>
+        <p class="health-sub truncate text-[10px] text-slate-400 mt-1">–</p>
       </div>
     </div>
   </section>
@@ -185,7 +197,7 @@ function sparkPoints(values, maxVal){
   const max=Math.max(maxVal||0, ...values, 1);
   return values.map((v,i)=>{
     const x=values.length===1?100:(i/(values.length-1))*100;
-    const y=30-(Math.max(0,Math.min(v,max))/max)*26;
+    const y=22-(Math.max(0,Math.min(v,max))/max)*18;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
 }
@@ -193,7 +205,7 @@ function setCard(kind, value, sub, percent, history, historyMax){
   const card=document.querySelector(`[data-health-card="${kind}"]`); if(!card) return;
   const val=q(card,".health-value"), subEl=q(card,".health-sub");
   val.textContent=value; subEl.textContent=sub;
-  if(percent!=null) val.className="health-value text-lg font-semibold "+pctTextClass(percent);
+  if(percent!=null) val.className="health-value text-base font-semibold leading-none "+pctTextClass(percent);
   const bar=q(card,".health-bar");
   if(bar && percent!=null){ bar.style.width=Math.max(0,Math.min(100,percent))+"%"; bar.className="health-bar h-full rounded-full transition-all "+pctClass(percent); }
   const line=q(card,"polyline"); if(line) line.setAttribute("points", sparkPoints(history||[], historyMax));
