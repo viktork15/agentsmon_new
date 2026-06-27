@@ -309,11 +309,17 @@ function renderAgents(root, agents){
     tb.appendChild(tr);
   });
 }
+async function refreshHealth(){
+  try{
+    const h=await (await fetch("/api/server-health",{credentials:"same-origin"})).json();
+    renderServerHealth(h);
+  }catch(e){renderServerHealth(null);}
+}
 async function refresh(){
   try{
     const d=await (await fetch("/api/state",{credentials:"same-origin"})).json();
     renderAgents(document.querySelector('section[data-svc="agents"]'), d.agents);
-    renderServerHealth(d.server_health);
+    if(d.server_health) renderServerHealth(d.server_health);
     const box=document.getElementById("services"); const tpl=document.getElementById("svc-tpl");
     if(box.childElementCount!==d.services.length){
       box.innerHTML=""; d.services.forEach(()=>box.appendChild(tpl.content.cloneNode(true)));
@@ -361,7 +367,7 @@ document.addEventListener("click", async e=>{
   }catch(err){ showToast("⚠ "+err); }
   setTimeout(refresh, act==="restart"?2500:600);
 });
-refresh(); setInterval(refresh, POLL*1000);
+refresh(); refreshHealth(); setInterval(refresh, POLL*1000); setInterval(refreshHealth, 3000);
 </script></body></html>"""
 
 
@@ -607,6 +613,10 @@ def _agent_action(name: str, action: str) -> tuple[bool, str]:
     return False, f"unknown action '{action}'"
 
 
+def _server_health() -> bytes:
+    return json.dumps(_server_health_state()).encode()
+
+
 def _state() -> bytes:
     cfg = config.load()
     agents = _agents_state(cfg)
@@ -670,7 +680,11 @@ def serve(host: str, port: int) -> None:
             if auth_user and auth_hash and not _auth_ok(self.headers.get("Authorization"),
                                                         auth_user, auth_hash):
                 return self._denied()
-            if self.path.startswith("/api/state"):
+            if self.path.startswith("/api/server-health"):
+                body = _server_health()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+            elif self.path.startswith("/api/state"):
                 body = _state()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
