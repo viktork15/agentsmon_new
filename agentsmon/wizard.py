@@ -17,8 +17,8 @@ from . import config, detect, service
 #: Auto-derived restart command per kind ({id} = session id). Includes the "run unattended" flag,
 #: since a supervised agent must come back able to work without an approval prompt.
 RESTART_DEFAULTS = {
-    "claude-code": "claude --dangerously-skip-permissions --resume {id}",
-    "codex": "codex --dangerously-bypass-approvals-and-sandbox resume {id}",
+    "claude-code": "claude --dangerously-skip-permissions --add-dir /home/Ciri/agents/_shared --resume {id}",
+    "codex": "codex resume {id} -C /home/Ciri/agents/yen --add-dir /home/Ciri/agents/_shared -a never -s workspace-write",
     "antigravity": "agy --conversation {id} --dangerously-skip-permissions",
     "aider": "aider",
     "gemini": "gemini",
