@@ -21,7 +21,7 @@ from . import config, detect, service
 SHARED_DIR_FALLBACK = "/home/Ciri/agents/_shared"
 
 RESTART_DEFAULTS = {
-    "claude-code": "claude --model claude-sonnet-4.6 --dangerously-skip-permissions --add-dir {shared_dir} --resume {id}",
+    "claude-code": "claude --model claude-sonnet-4-6 --dangerously-skip-permissions --add-dir {shared_dir} --resume {id}",
     "codex": "codex resume {id} -C {cwd} --add-dir {shared_dir} -a never -s workspace-write",
     "antigravity": "agy --conversation {id} --dangerously-skip-permissions",
     "aider": "aider",
@@ -35,8 +35,8 @@ MATCH_KEYWORD = {"claude-code": "claude", "codex": "codex", "antigravity": "agy"
 #: most recent conversation with --continue, so a restart keeps its context without needing an id).
 AGENT_TYPES = [
     {"kind": "claude-code", "label": "Claude Code", "bin": "claude",
-     "launch": "claude --model claude-sonnet-4.6 --dangerously-skip-permissions --add-dir {shared_dir}",
-     "restart": "claude --model claude-sonnet-4.6 --continue --dangerously-skip-permissions --add-dir {shared_dir}"},
+     "launch": "claude --model claude-sonnet-4-6 --dangerously-skip-permissions --add-dir {shared_dir}",
+     "restart": "claude --model claude-sonnet-4-6 --continue --dangerously-skip-permissions --add-dir {shared_dir}"},
     {"kind": "codex", "label": "Codex", "bin": "codex",
      "launch": "codex -C {cwd} --add-dir {shared_dir} -a never -s workspace-write",
      "restart": "codex resume --last -C {cwd} --add-dir {shared_dir} -a never -s workspace-write"},
