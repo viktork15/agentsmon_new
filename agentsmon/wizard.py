@@ -6,7 +6,9 @@ config, and installs the boot service. Designed to need almost no typing.
 """
 from __future__ import annotations
 
+import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -16,9 +18,11 @@ from . import config, detect, service
 
 #: Auto-derived restart command per kind ({id} = session id). Includes the "run unattended" flag,
 #: since a supervised agent must come back able to work without an approval prompt.
+SHARED_DIR_FALLBACK = "/home/Ciri/agents/_shared"
+
 RESTART_DEFAULTS = {
-    "claude-code": "claude --dangerously-skip-permissions --add-dir /home/Ciri/agents/_shared --resume {id}",
-    "codex": "codex resume {id} -C /home/Ciri/agents/yen --add-dir /home/Ciri/agents/_shared -a never -s workspace-write",
+    "claude-code": "claude --dangerously-skip-permissions --add-dir {shared_dir} --resume {id}",
+    "codex": "codex resume {id} -C {cwd} --add-dir {shared_dir} -a never -s workspace-write",
     "antigravity": "agy --conversation {id} --dangerously-skip-permissions",
     "aider": "aider",
     "gemini": "gemini",
@@ -31,11 +35,11 @@ MATCH_KEYWORD = {"claude-code": "claude", "codex": "codex", "antigravity": "agy"
 #: most recent conversation with --continue, so a restart keeps its context without needing an id).
 AGENT_TYPES = [
     {"kind": "claude-code", "label": "Claude Code", "bin": "claude",
-     "launch": "claude --dangerously-skip-permissions --add-dir /home/Ciri/agents/_shared",
-     "restart": "claude --continue --dangerously-skip-permissions --add-dir /home/Ciri/agents/_shared"},
+     "launch": "claude --dangerously-skip-permissions --add-dir {shared_dir}",
+     "restart": "claude --continue --dangerously-skip-permissions --add-dir {shared_dir}"},
     {"kind": "codex", "label": "Codex", "bin": "codex",
-     "launch": "codex -C /home/Ciri/agents/yen --add-dir /home/Ciri/agents/_shared -a never -s workspace-write",
-     "restart": "codex resume --last -C /home/Ciri/agents/yen --add-dir /home/Ciri/agents/_shared -a never -s workspace-write"},
+     "launch": "codex -C {cwd} --add-dir {shared_dir} -a never -s workspace-write",
+     "restart": "codex resume --last -C {cwd} --add-dir {shared_dir} -a never -s workspace-write"},
     {"kind": "antigravity", "label": "Antigravity", "bin": "agy",
      "launch": "agy --dangerously-skip-permissions",
      "restart": "agy --continue --dangerously-skip-permissions"},
@@ -44,16 +48,31 @@ AGENT_TYPES = [
 ]
 
 
-def _auto_restart(a: dict) -> str:
+def _shared_dir() -> str:
+    """Shared coordination directory for supervised agents.
+
+    Can be overridden via AGENTSMON_SHARED_DIR; otherwise use the current deployment's shared tree.
+    """
+    return os.environ.get("AGENTSMON_SHARED_DIR", SHARED_DIR_FALLBACK)
+
+
+def _format_agent_cmd(template: str, *, sid: str | None = None, cwd: str | None = None) -> str:
+    """Fill command templates with the current cwd/shared-dir and optionally a session id."""
+    if not sid:
+        template = re.sub(r"\s*(--resume|resume|--conversation)\s*\{id\}", "", template).strip()
+    return template.format(
+        id=sid or "",
+        cwd=shlex.quote(cwd or str(Path.home())),
+        shared_dir=shlex.quote(_shared_dir()),
+    )
+
+
+def _auto_restart(a: dict, cwd: str | None = None) -> str:
     """Build the restart command for a detected agent — no user typing needed."""
     tpl = RESTART_DEFAULTS.get(a["kind"], "")
     if not tpl:
         return ""
-    sid = a.get("session_id")
-    if sid:
-        return tpl.replace("{id}", sid)
-    # No session id → drop the resume/conversation argument, keep the base launch.
-    return re.sub(r"\s*(--resume|resume|--conversation)\s*\{id\}", "", tpl).strip()
+    return _format_agent_cmd(tpl, sid=a.get("session_id"), cwd=cwd)
 
 
 def primary_ip() -> str:
@@ -204,10 +223,11 @@ def _ask_secret(prompt: str) -> str:
 
 
 def _agent_entry(a: dict) -> dict:
+    cwd = detect._session_cwd(a["name"]) or str(Path.home())
     return {"name": a["name"], "label": a["label"],
             "match": MATCH_KEYWORD.get(a["kind"], a["kind"]),
-            "restart": _auto_restart(a),
-            "cwd": detect._session_cwd(a["name"]) or str(Path.home()),
+            "restart": _auto_restart(a, cwd=cwd),
+            "cwd": cwd,
             "enabled": True}
 
 
@@ -382,12 +402,14 @@ def new() -> int:
     if mk.returncode != 0:
         print(f"✗ couldn't create tmux session: {mk.stderr.strip()}")
         return 1
-    subprocess.run(["tmux", "send-keys", "-t", name, chosen["launch"], "Enter"], capture_output=True)
+    launch_cmd = _format_agent_cmd(chosen["launch"], cwd=cwd)
+    restart_cmd = _format_agent_cmd(chosen["restart"], cwd=cwd)
+    subprocess.run(["tmux", "send-keys", "-t", name, launch_cmd, "Enter"], capture_output=True)
 
     cfg = config.load()
     cfg.setdefault("agents", []).append({
         "name": name, "label": chosen["label"], "match": MATCH_KEYWORD[chosen["kind"]],
-        "restart": chosen["restart"], "cwd": cwd, "enabled": True})
+        "restart": restart_cmd, "cwd": cwd, "enabled": True})
     config.save(cfg)
     print(f"\n✓ Created '{name}' ({chosen['label']}), launched in tmux, and added to monitoring.")
     service.install()
