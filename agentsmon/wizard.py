@@ -31,11 +31,11 @@ MATCH_KEYWORD = {"claude-code": "claude", "codex": "codex", "antigravity": "agy"
 #: most recent conversation with --continue, so a restart keeps its context without needing an id).
 AGENT_TYPES = [
     {"kind": "claude-code", "label": "Claude Code", "bin": "claude",
-     "launch": "claude --dangerously-skip-permissions",
-     "restart": "claude --continue --dangerously-skip-permissions"},
+     "launch": "claude --dangerously-skip-permissions --add-dir /home/Ciri/agents/_shared",
+     "restart": "claude --continue --dangerously-skip-permissions --add-dir /home/Ciri/agents/_shared"},
     {"kind": "codex", "label": "Codex", "bin": "codex",
-     "launch": "codex --dangerously-bypass-approvals-and-sandbox",
-     "restart": "codex --dangerously-bypass-approvals-and-sandbox"},
+     "launch": "codex -C /home/Ciri/agents/yen --add-dir /home/Ciri/agents/_shared -a never -s workspace-write",
+     "restart": "codex resume --last -C /home/Ciri/agents/yen --add-dir /home/Ciri/agents/_shared -a never -s workspace-write"},
     {"kind": "antigravity", "label": "Antigravity", "bin": "agy",
      "launch": "agy --dangerously-skip-permissions",
      "restart": "agy --continue --dangerously-skip-permissions"},
