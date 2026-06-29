@@ -552,6 +552,11 @@ def new() -> int:
             print(f"  A tmux session '{name}' already exists — pick another name.")
             name = ""
 
+    print("\nStep 3 — what should this agent focus on? (its specialization)")
+    focus = _ask("  Focus (one or two sentences)") or "Specializovaný agent systému Ciri."
+    resp_raw = _ask("Step 4 — main responsibilities (comma-separated, optional)")
+    responsibilities = [r.strip() for r in re.split(r"[,;\n]+", resp_raw) if r.strip()]
+
     # Default the working directory to <agents_base>/<slug> so a new agent lands
     # next to geralt/regis/yen instead of in $HOME.
     agents_base = Path(_shared_dir()).parent
@@ -564,6 +569,17 @@ def new() -> int:
     created = _scaffold_agent_dirs(cwd)
     for d in created:
         print(f"  • created {d}")
+
+    # Write a detailed instruction file (CLAUDE.md / AGENTS.md) from the focus,
+    # unless the agent already has one (don't clobber a hand-written file).
+    instr_file = Path(cwd) / _instruction_filename(chosen["kind"])
+    if instr_file.exists():
+        print(f"  • {instr_file.name} already exists — left untouched")
+    else:
+        instr_file.write_text(
+            _render_instructions(name, Path(cwd).name, chosen["kind"], focus, responsibilities),
+            encoding="utf-8")
+        print(f"  • wrote {instr_file}")
 
     # Create the session detached and launch the agent inside it.
     mk = subprocess.run(["tmux", "new-session", "-d", "-s", name, "-c", cwd], capture_output=True, text=True)
