@@ -50,7 +50,7 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
 <div id="toast" class="fixed left-1/2 bottom-5 -translate-x-1/2 bg-slate-800 text-white text-sm px-2 py-1.5 rounded-md shadow-lg opacity-0 pointer-events-none" style="z-index:50">&nbsp;</div>
 <div class="mx-auto px-5 py-6" style="max-width:850px">
 
-  <section class="mb-6" data-svc="agents">
+  <section class="mb-4" data-svc="agents">
     <div class="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 bg-white border-slate-200">
       <span class="svc-dot h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
       <h2 class="text-base font-semibold">Persistent Agents</h2>
@@ -71,7 +71,7 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
     </div>
   </section>
 
-  <section class="mb-6" data-svc="server-health">
+  <section class="mb-4" data-svc="server-health">
     <div class="server-health-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 bg-white border-slate-200">
       <span class="server-health-dot h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
       <h2 class="text-base font-semibold">Server Health</h2>
@@ -128,7 +128,7 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
 </div>
 
 <template id="svc-tpl">
-  <section class="mb-6">
+  <section class="mb-4">
     <div class="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 bg-white border-slate-200">
       <span class="svc-dot h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
       <h2 class="svc-name text-base font-semibold"></h2>
