@@ -51,7 +51,7 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
 <div class="mx-auto px-5 py-6" style="max-width:850px">
 
   <section class="mb-4" data-svc="agents">
-    <div class="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 bg-white border-slate-200">
+    <div class="svc-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 bg-white border-slate-200">
       <span class="svc-dot h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
       <h2 class="text-base font-semibold">Persistent Agents</h2>
       <span class="agents-count ml-auto text-sm font-medium text-slate-400">loading…</span>
@@ -72,7 +72,7 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
   </section>
 
   <section class="mb-4" data-svc="server-health">
-    <div class="server-health-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 bg-white border-slate-200">
+    <div class="server-health-head flex items-center gap-2.5 mb-1.5 rounded-lg border px-3 py-2 bg-white border-slate-200">
       <span class="server-health-dot h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
       <h2 class="text-base font-semibold">Server Health</h2>
       <span class="server-health-state ml-auto text-sm font-medium text-slate-400">loading…</span>
@@ -129,7 +129,7 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
 
 <template id="svc-tpl">
   <section class="mb-4">
-    <div class="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 bg-white border-slate-200">
+    <div class="svc-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 bg-white border-slate-200">
       <span class="svc-dot h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
       <h2 class="svc-name text-base font-semibold"></h2>
       <span class="svc-state ml-auto text-sm font-medium text-slate-400">loading…</span>
@@ -240,7 +240,7 @@ function renderTimeline(root, buckets, windowDays){
 }
 function renderService(root, s){
   const st=STATE[s.state]||STATE.nodata;
-  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 "+st[3];
+  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 "+st[3];
   q(root,".svc-dot").className="svc-dot h-3 w-3 rounded-full shrink-0 "+st[0];
   const se=q(root,".svc-state"); se.textContent=st[1]; se.className="svc-state ml-auto text-sm font-medium "+st[2];
   q(root,".m-uptime").textContent=fmtDuration(s.uptime_seconds);
@@ -268,7 +268,7 @@ function renderService(root, s){
 function renderAgents(root, agents){
   const tb=document.getElementById("agents-rows");
   const on=agents.some(a=>a.alive); const running=agents.filter(a=>a.alive).length;
-  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 "+(on?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200");
+  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 "+(on?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200");
   q(root,".svc-dot").className="svc-dot h-3 w-3 rounded-full shrink-0 "+(on?"bg-emerald-500":"bg-slate-300");
   const cnt=q(root,".agents-count");
   cnt.textContent=running?`${running} agent${running===1?"":"s"} running`:"no agents running";
