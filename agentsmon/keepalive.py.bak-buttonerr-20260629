@@ -80,40 +80,23 @@ def _alive(name: str, match_kw: str, sessions: dict, children: dict, procs: dict
     return True, any(match_kw in procs.get(p, "") for p in tree)
 
 
-def _start(agent: dict, tmux_bin: str, recreate: bool = False) -> str | None:
-    """Restart an agent in its tmux session.
-
-    Returns None on success, or a short error string if a tmux step actually
-    failed, so callers (e.g. the dashboard restart button) can surface the
-    failure instead of silently reporting success.
-    """
+def _start(agent: dict, tmux_bin: str, recreate: bool = False) -> None:
     name = agent["name"]
     cwd = os.path.expanduser(agent.get("cwd") or str(Path.home()))
     cmd = agent.get("restart", "")
-    try:
-        if recreate:
-            # The session survives but the agent won't relaunch into it (the pane is stuck in a
-            # half-dead state). Kill it so it's recreated clean instead of send-keys'ing into the mess.
-            # A failure here just means the session was already gone — not an error.
-            subprocess.run([tmux_bin, "kill-session", "-t", name], capture_output=True, timeout=10)
-            time.sleep(0.5)
-        if name not in {s["name"] for s in detect.tmux_sessions()}:
-            r = subprocess.run([tmux_bin, "new-session", "-d", "-s", name, "-c", cwd],
-                               capture_output=True, timeout=10, text=True)
-            if r.returncode != 0:
-                return f"tmux new-session failed: {(r.stderr or '').strip()[:160] or 'exit ' + str(r.returncode)}"
-        if cmd:
-            # Small settle so the shell is ready to receive the command.
-            time.sleep(0.5)
-            r = subprocess.run([tmux_bin, "send-keys", "-t", name, cmd, "Enter"],
-                               capture_output=True, timeout=10, text=True)
-            if r.returncode != 0:
-                return f"tmux send-keys failed: {(r.stderr or '').strip()[:160] or 'exit ' + str(r.returncode)}"
-    except subprocess.TimeoutExpired:
-        return "tmux command timed out"
-    except OSError as exc:
-        return f"tmux command error: {exc}"
-    return None
+    if recreate:
+        # The session survives but the agent won't relaunch into it (the pane is stuck in a
+        # half-dead state). Kill it so it's recreated clean instead of send-keys'ing into the mess.
+        subprocess.run([tmux_bin, "kill-session", "-t", name], capture_output=True, timeout=10)
+        time.sleep(0.5)
+    if name not in {s["name"] for s in detect.tmux_sessions()}:
+        subprocess.run([tmux_bin, "new-session", "-d", "-s", name, "-c", cwd],
+                       capture_output=True, timeout=10)
+    if cmd:
+        # Small settle so the shell is ready to receive the command.
+        time.sleep(0.5)
+        subprocess.run([tmux_bin, "send-keys", "-t", name, cmd, "Enter"],
+                       capture_output=True, timeout=10)
 
 
 
