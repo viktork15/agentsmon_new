@@ -56,32 +56,6 @@ def _shared_dir() -> str:
     return os.environ.get("AGENTSMON_SHARED_DIR", SHARED_DIR_FALLBACK)
 
 
-def _scaffold_agent_dirs(cwd: str) -> list[Path]:
-    """Create the standard directory layout for a new agent.
-
-    Mirrors the existing agents (geralt/regis/yen):
-        <cwd>/                     the agent's own working directory
-        <shared>/tasks/<slug>/     where the agent reads its tasks
-        <shared>/outputs/<slug>/   where the agent writes its outputs
-
-    ``slug`` is the basename of the working directory. Idempotent — returns the
-    list of directories that were actually created (so the caller can report them).
-    """
-    shared = Path(_shared_dir())
-    slug = Path(cwd).name
-    targets = [
-        Path(cwd),
-        shared / "tasks" / slug,
-        shared / "outputs" / slug,
-    ]
-    created: list[Path] = []
-    for d in targets:
-        if not d.exists():
-            created.append(d)
-        d.mkdir(parents=True, exist_ok=True)
-    return created
-
-
 def _format_agent_cmd(template: str, *, sid: str | None = None, cwd: str | None = None) -> str:
     """Fill command templates with the current cwd/shared-dir and optionally a session id."""
     if not sid:
@@ -421,18 +395,7 @@ def new() -> int:
             print(f"  A tmux session '{name}' already exists — pick another name.")
             name = ""
 
-    # Default the working directory to <agents_base>/<slug> so a new agent lands
-    # next to geralt/regis/yen instead of in $HOME.
-    agents_base = Path(_shared_dir()).parent
-    slug = (re.split(r"[\s:_-]+", name.strip())[0] or name).lower()
-    cwd = str(Path(_ask("Working directory", str(agents_base / slug))).expanduser())
-
-    # Scaffold the standard agent directory layout before launching: tmux
-    # new-session needs cwd to exist, and the agent expects its shared tasks/ and
-    # outputs/ folders to be present.
-    created = _scaffold_agent_dirs(cwd)
-    for d in created:
-        print(f"  • created {d}")
+    cwd = str(Path(_ask("Working directory", str(Path.home()))).expanduser())
 
     # Create the session detached and launch the agent inside it.
     mk = subprocess.run(["tmux", "new-session", "-d", "-s", name, "-c", cwd], capture_output=True, text=True)
