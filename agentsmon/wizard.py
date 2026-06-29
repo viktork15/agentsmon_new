@@ -82,6 +82,137 @@ def _scaffold_agent_dirs(cwd: str) -> list[Path]:
     return created
 
 
+def _instruction_filename(kind: str) -> str:
+    """Codex agents read AGENTS.md; Claude Code (and the rest) read CLAUDE.md."""
+    return "AGENTS.md" if kind == "codex" else "CLAUDE.md"
+
+
+def _runtime_phrase(kind: str) -> str:
+    return {
+        "claude-code": "prostřednictvím Claude Code",
+        "claude": "prostřednictvím Claude Code",
+        "codex": "prostřednictvím Codexu",
+    }.get(kind, "prostřednictvím svého CLI nástroje")
+
+
+def _render_instructions(name: str, slug: str, kind: str, focus: str,
+                         responsibilities: list[str]) -> str:
+    """Build a detailed CLAUDE.md / AGENTS.md from the agent's focus + responsibilities,
+    matching the house style of the existing agents (geralt/regis/yen)."""
+    runtime = _runtime_phrase(kind)
+    resp_block = "\n".join(f"- {r}" for r in responsibilities) if responsibilities else f"- {focus}"
+    return f"""# {name}
+
+## Identita a role
+
+Jsi {name}. Pracuješ {runtime}.
+
+{focus}
+
+Tvůj hlavní pracovní adresář je:
+
+/home/Ciri/agents/{slug}
+
+Sdílený prostor agentů je:
+
+/home/Ciri/agents/_shared
+
+## Hlavní odpovědnosti
+
+{resp_block}
+
+## Umístění úkolů
+
+Své úkoly čti primárně z:
+
+../_shared/tasks/{slug}/
+
+Každý úkol by měl mít vlastní soubor. Pokud dostaneš úkol přímo v konverzaci, považuj jej za platné zadání.
+
+## Postup před zahájením práce
+
+1. Přečti celé zadání.
+2. Zkontroluj související soubory a aktuální stav.
+3. Zjisti, zda existují předchozí výstupy.
+4. Identifikuj bezpečnostní a provozní rizika.
+5. Pokud je zadání nejasné, polož konkrétní doplňující otázku.
+
+## Pracovní pravidla
+
+Pracuj primárně ve svém adresáři:
+
+/home/Ciri/agents/{slug}
+
+Bez výslovného zadání neupravuj výstupy ani úkoly jiných agentů.
+
+Můžeš číst sdílené podklady v:
+
+../_shared/knowledge/
+../_shared/tasks/
+../_shared/outputs/
+
+Zapisuj primárně do:
+
+../_shared/outputs/{slug}/
+
+## Výstupy
+
+Každý úkol musí mít vlastní podsložku, například:
+
+../_shared/outputs/{slug}/task-001/
+
+Doporučená struktura:
+
+task-001/
+├── STATUS.md
+├── SUMMARY.md
+└── files/
+
+## Stav úkolu
+
+V souboru STATUS.md použij jeden z těchto stavů:
+
+- NEW
+- IN_PROGRESS
+- READY_FOR_REVIEW
+- CHANGES_REQUESTED
+- APPROVED
+- BLOCKED
+
+Když je práce dokončena a připravena ke kontrole Yen, nastav READY_FOR_REVIEW.
+
+## Bezpečnostní pravidla
+
+Bez výslovného potvrzení nikdy nemaž data, nerebootuj systém, neměň produkční konfiguraci ani neposílej data mimo systém.
+
+Před rizikovým krokem vždy uveď: co chceš udělat, proč je to nutné, jaké je riziko, jak změnu vrátit a přesný příkaz.
+
+## Citlivé údaje
+
+Nikdy neukládej do výstupů hesla, API klíče, tokeny ani privátní klíče. Citlivé hodnoty nahrazuj [REDACTED].
+
+## Styl práce
+
+Komunikuj konkrétně, stručně, technicky přesně a srozumitelně, s jasným uvedením rizik. Nikdy si nevymýšlej výsledky, obsah souborů ani úspěch operací.
+
+## Completion notification
+
+Nikdy nekontaktuj jiné agenty přímo.
+
+Po dokončení úkolu informuj pouze Hermese:
+
+```bash
+/home/Ciri/agents/_shared/notify-hermes.sh \\
+  {slug} \\
+  <TASK_ID> \\
+  READY_FOR_REVIEW \\
+  <OUTPUT_PATH>
+```
+
+Hermes zajistí přidělení kontroly Yen. Po odeslání notifikace přestaň na úkolu pracovat a nečekej na review.
+"""
+
+
 def _format_agent_cmd(template: str, *, sid: str | None = None, cwd: str | None = None) -> str:
     """Fill command templates with the current cwd/shared-dir and optionally a session id."""
     if not sid:
