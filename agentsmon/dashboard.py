@@ -69,7 +69,6 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
         <tbody id="agents-rows"><tr><td colspan="6" class="px-3 py-3 text-slate-400">loading…</td></tr></tbody>
       </table>
     </div>
-    <p class="text-[11px] text-slate-400 mt-2">tmux sessions running an agent, linked by their <code>--resume</code> session id</p>
   </section>
 
   <section class="mb-6" data-svc="server-health">
