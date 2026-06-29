@@ -649,21 +649,37 @@ def _agent_action(name: str, action: str) -> tuple[bool, str]:
         # Re-enable (in case it was stopped) and relaunch fresh so it picks up new config (e.g. MCP).
         _set_enabled(name, True)
         if agent:
-            keepalive._start(agent, tmux_bin, recreate=True)   # kill session + recreate + resume cmd
+            err = keepalive._start(agent, tmux_bin, recreate=True)   # kill session + recreate + resume cmd
+            if err:
+                return False, f"restart failed for {name}: {err}"
             return True, f"restarting {name}"
         cmd = daemon.get("restart")
         if not cmd:
             return False, f"{name} has no restart command"
-        subprocess.run(cmd, shell=True, capture_output=True, timeout=30)
+        try:
+            r = subprocess.run(cmd, shell=True, capture_output=True, timeout=30, text=True)
+        except subprocess.TimeoutExpired:
+            return False, f"restart failed for {name}: command timed out"
+        if r.returncode != 0:
+            detail = (r.stderr or r.stdout or "").strip()[:200]
+            return False, f"restart failed for {name}: {detail or 'exit ' + str(r.returncode)}"
         return True, f"restarting {name}"
     if action == "stop":
         # Disable first so keepalive won't revive it, then kill the session / process.
         _set_enabled(name, False)
         if agent:
-            subprocess.run([tmux_bin, "kill-session", "-t", name], capture_output=True, timeout=10)
+            r = subprocess.run([tmux_bin, "kill-session", "-t", name],
+                               capture_output=True, timeout=10, text=True)
+            # Non-zero because the session was already gone is fine — that's still "stopped".
+            stderr = (r.stderr or "").lower()
+            if r.returncode != 0 and "can't find" not in stderr and "no server" not in stderr:
+                return False, f"stop failed for {name}: {(r.stderr or '').strip()[:160] or 'exit ' + str(r.returncode)}"
             return True, f"stopped {name}"
         pat = daemon.get("pattern") or daemon.get("binary") or name
-        subprocess.run(["pkill", "-f", pat], capture_output=True, timeout=10)
+        r = subprocess.run(["pkill", "-f", pat], capture_output=True, timeout=10, text=True)
+        # pkill exit 1 = no process matched (already stopped); >1 = real error.
+        if r.returncode > 1:
+            return False, f"stop failed for {name}: {(r.stderr or '').strip()[:160] or 'exit ' + str(r.returncode)}"
         return True, f"stopped {name}"
     return False, f"unknown action '{action}'"
 
