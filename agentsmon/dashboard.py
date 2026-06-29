@@ -276,7 +276,7 @@ function renderAgents(root, agents){
   if(!agents.length){tb.innerHTML=`<tr><td colspan="6" class="px-3 py-3 text-slate-400">No tmux sessions found.</td></tr>`;return;}
   tb.innerHTML="";
   agents.forEach(a=>{
-    const tcls=VENDOR[a.vendor]||"bg-slate-100 text-slate-600";
+    const tcls=VENDOR[String(a.vendor||"").toLowerCase()]||"bg-slate-100 text-slate-600";
     const copy=a.resume_cmd||a.session_id||"";
     const tip=copy?`${copy} (click to copy)`:"no resume";
     let sid;

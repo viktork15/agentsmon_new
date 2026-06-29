@@ -565,7 +565,7 @@ def daemon_model(name: str) -> str | None:
 #        # Hermes here runs on the openai-codex provider → same model as Codex.
 #        return _codex_model() or _codex_model_any()
 
-    if "hermes" in n:
+    if "hermes" in n or "ciri" in n:
         return (
             _hermes_model()
             or _codex_model()
