@@ -72,7 +72,7 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
   </section>
 
   <section class="mb-4" data-svc="server-health">
-    <div class="server-health-head flex items-center gap-2.5 mb-1.5 rounded-lg border px-3 py-2 bg-white border-slate-200">
+    <div class="server-health-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 bg-white border-slate-200">
       <span class="server-health-dot h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
       <h2 class="text-base font-semibold">Server Health</h2>
       <span class="server-health-state ml-auto text-sm font-medium text-slate-400">loading…</span>
@@ -212,7 +212,7 @@ function setCard(kind, value, sub, percent, history, historyMax){
 function renderServerHealth(h){
   const root=document.querySelector('section[data-svc="server-health"]'); if(!root) return;
   const ok=h && h.status==="operational";
-  q(root,".server-health-head").className="server-health-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 "+(ok?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200");
+  q(root,".server-health-head").className="server-health-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 "+(ok?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200");
   q(root,".server-health-dot").className="server-health-dot h-3 w-3 rounded-full shrink-0 "+(ok?"bg-emerald-500":"bg-slate-300");
   const st=q(root,".server-health-state"); st.textContent=ok?"Operational":"No data"; st.className="server-health-state ml-auto text-sm font-medium "+(ok?"text-emerald-600":"text-slate-400");
   if(!h) return;
