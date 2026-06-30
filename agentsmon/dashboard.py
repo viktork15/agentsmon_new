@@ -69,8 +69,7 @@ body.dark .text-emerald-600{color:#34d399!important}
 body.dark .bg-rose-50{background-color:#4c0519!important}
 body.dark .border-rose-200{border-color:#9f1239!important}
 body.dark .text-rose-600{color:#fb7185!important}
-body.dark .bg-amber-100{background-color:#451a03!important}
-body.dark .text-amber-700{color:#fbbf24!important}
+body.dark .bg-amber-100{color:#334155!important}
 body.dark .bg-orange-100{background-color:#431407!important}
 body.dark .text-orange-700{color:#fb923c!important}
 body.dark .bg-emerald-100{background-color:#022c22!important}
