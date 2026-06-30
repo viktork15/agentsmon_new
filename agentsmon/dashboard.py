@@ -45,8 +45,51 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
 <title>Agents Monitoring</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
 <script src="https://cdn.tailwindcss.com"></script>
-<style>.bar{transition:opacity .15s ease}.bar:hover{opacity:.65}.copied-flash{color:#059669!important;transition:color .1s}#toast{transition:opacity .2s ease}</style>
+<style>
+.bar{transition:opacity .15s ease}.bar:hover{opacity:.65}.copied-flash{color:#059669!important;transition:color .1s}#toast{transition:opacity .2s ease}
+/* ── Dark mode overrides ───────────────────────────────────────────── */
+body.dark{background-color:#0f172a;color:#f1f5f9}
+body.dark .bg-slate-50{background-color:#0f172a!important}
+body.dark .bg-white{background-color:#1e293b!important}
+body.dark .bg-slate-100{background-color:#0f172a!important}
+body.dark .border-slate-200{border-color:#334155!important}
+body.dark .border-slate-100{border-color:#1e293b!important}
+body.dark .text-slate-800{color:#f1f5f9!important}
+body.dark .text-slate-600{color:#cbd5e1!important}
+body.dark .text-slate-500{color:#94a3b8!important}
+body.dark .text-slate-400{color:#64748b!important}
+body.dark .text-slate-300{color:#475569!important}
+body.dark .hover\:bg-slate-100:hover{background-color:#334155!important}
+body.dark .hover\:bg-rose-50:hover{background-color:#4c0519!important}
+body.dark .bg-emerald-50{background-color:#022c22!important}
+body.dark .border-emerald-200{border-color:#065f46!important}
+body.dark .text-emerald-600{color:#34d399!important}
+body.dark .bg-rose-50{background-color:#4c0519!important}
+body.dark .border-rose-200{border-color:#9f1239!important}
+body.dark .text-rose-600{color:#fb7185!important}
+body.dark .bg-orange-100{background-color:#431407!important}
+body.dark .text-orange-700{color:#fb923c!important}
+body.dark .bg-emerald-100{background-color:#022c22!important}
+body.dark .text-emerald-700{color:#34d399!important}
+body.dark .bg-sky-100{background-color:#0c1a2e!important}
+body.dark .text-sky-700{color:#38bdf8!important}
+body.dark .bg-violet-100{background-color:#2e1065!important}
+body.dark .text-violet-700{color:#a78bfa!important}
+body.dark .bg-pink-100{background-color:#4a044e!important}
+body.dark .text-pink-700{color:#f472b6!important}
+body.dark .bg-slate-800{background-color:#0f172a!important}
+/* Toggle button */
+#theme-toggle{transition:background-color .15s,border-color .15s}
+body.dark #theme-toggle{background-color:#1e293b;border-color:#334155;color:#94a3b8}
+body.dark #theme-toggle:hover{background-color:#334155;color:#f1f5f9}
+</style>
 </head><body class="bg-slate-50 text-slate-800 antialiased">
+<button id="theme-toggle" title="Toggle dark / light mode"
+  class="fixed top-3 right-3 p-1.5 rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100 shadow-sm"
+  style="z-index:200">
+  <svg id="icon-moon" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0 1 12 21.75 9.75 9.75 0 0 1 12 2.25c.527 0 1.04.044 1.539.127a7.5 7.5 0 0 0 8.213 12.625z"/></svg>
+  <svg id="icon-sun"  class="h-4 w-4 hidden" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0z"/></svg>
+</button>
 <div id="toast" class="fixed left-1/2 bottom-5 -translate-x-1/2 bg-slate-800 text-white text-sm px-2 py-1.5 rounded-md shadow-lg opacity-0 pointer-events-none" style="z-index:50">&nbsp;</div>
 <div class="mx-auto px-5 py-6" style="max-width:850px">
 
@@ -378,6 +421,23 @@ document.addEventListener("click", async e=>{
   }catch(err){ showToast("⚠ "+err); }
   setTimeout(refresh, act==="restart"?2500:600);
 });
+// ── Dark / light toggle ──────────────────────────────────────────────
+(function(){
+  const btn=document.getElementById("theme-toggle");
+  const moon=document.getElementById("icon-moon");
+  const sun=document.getElementById("icon-sun");
+  function applyTheme(dark){
+    document.body.classList.toggle("dark",dark);
+    moon.classList.toggle("hidden",dark);
+    sun.classList.toggle("hidden",!dark);
+  }
+  applyTheme(localStorage.getItem("agentsmon-theme")==="dark");
+  btn.addEventListener("click",()=>{
+    const nowDark=!document.body.classList.contains("dark");
+    localStorage.setItem("agentsmon-theme",nowDark?"dark":"light");
+    applyTheme(nowDark);
+  });
+})();
 refresh(); refreshHealth(); setInterval(refresh, POLL*1000); setInterval(refreshHealth, 3000);
 </script></body></html>"""
 
