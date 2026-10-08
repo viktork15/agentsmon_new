@@ -121,16 +121,8 @@ def pinned_agents(pinned: list[dict]) -> list[dict]:
 
         out.append({
             "name": d.get("name"), "kind": "daemon",
-#            "label": d.get("tag") or model or d.get("name"),
-#            "vendor": d.get("vendor") or vendor_for_model(model),
-
-            "label": model or d.get("tag") or d.get("name"),
-            "vendor": (
-                       vendor_for_model(raw_model)
-                       if model
-                       else d.get("vendor")
-                      ),
-
+            "label": d.get("tag") or model or d.get("name"),
+            "vendor": d.get("vendor") or vendor_for_agent(None, model),
             "name_color": d.get("name_color"),
             "session_id": None, "alive": alive, "age": age, "latency_ms": lat,
             "health_url": health_url,
@@ -261,6 +253,45 @@ def _codex_session_for_cwd(cwd: str) -> str | None:
     return _codex_info_for_cwd(cwd)[0]
 
 
+def label_for_claude(transcript_model: str | None, cmds: list[str], fallback: str) -> str:
+    """The model tag for a Claude Code row — the SINGLE place that decides it.
+
+    Order matters: the transcript reports the model actually in use (a session can be
+    switched at runtime with /model), so it wins. argv covers the first minutes, before any
+    transcript exists. The generic kind label is the last resort.
+    """
+    return transcript_model or _model_from_argv(cmds) or fallback
+
+
+def _model_from_argv(cmds: list[str]) -> str | None:
+    """The model a session was launched with, straight off its command line.
+
+    A transcript only exists once the session has actually answered something, so a freshly
+    started agent showed the generic kind label ("Claude Code") with no model for its first
+    minutes. `--model` is on argv from the very first second, so use it when the transcript
+    cannot answer yet.
+    """
+    for cmd in cmds:
+        m = re.search(r"--model[= ]+(\S+)", cmd)
+        if m:
+            return prettify_model(m.group(1).strip("\"'"))
+    return None
+
+
+def prettify_model(raw: str) -> str:
+    """``claude-fable-5-1`` → ``Fable 5.1``, ``gemini-3-flash`` → ``Gemini 3 Flash``.
+
+    Routing by family matters: sending everything through the Claude prettifier left Gemini
+    ids on screen exactly as the process was launched with them.
+    """
+    r = raw or ""
+    if r.startswith("gemini"):
+        return _pretty_gemini_model(r)
+    if r.split("/")[-1][:3].lower() in ("gpt", "o1-", "o3-", "o4-") or re.match(r"o\d", r):
+        return _pretty_model(r)                  # Codex launched with --model gpt-6-astra
+    return _pretty_claude_model(r)
+
+
 def _pretty_claude_model(raw: str) -> str:
     """``claude-opus-4-8`` → ``Opus 4.8`` (family + version); unknown ids returned as-is."""
     m = re.match(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d+))?", raw or "")
@@ -338,39 +369,53 @@ def _claude_model_from_transcript(path: str) -> str | None:
 #
 #    return None
 
-##NEW LINES
+def claude_project_dirs(cwd: str) -> list[Path]:
+    """Candidate transcript directories for a working directory.
 
-def _transcript_start_ts(path: str, head: list[str]) -> float:
-    """Best-effort session start time: the earliest ISO ``timestamp`` in the head lines,
-    falling back to the file's mtime. Used to match a transcript to the agent that owns it."""
-    for line in head:
-        try:
-            ts = json.loads(line).get("timestamp")
-        except ValueError:
-            continue
-        if ts:
-            try:
-                return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
-            except ValueError:
-                pass
-    try:
-        return os.path.getmtime(path)
-    except OSError:
-        return 0.0
-
-
-def _claude_info_for_cwd(cwd: str, session_started: float | None = None,
-                         claimed: set[str] | None = None) -> tuple[str | None, str | None]:
-    """A freshly launched `claude` has no ``--resume`` id on argv, so resolve its session UUID
-    (and concrete model) from ~/.claude/projects/ by matching the transcript ``cwd``.
-
-    When several Claude agents run in the SAME cwd, picking the newest transcript would give
-    them all the same id. So: collect every transcript matching the cwd, skip ids already
-    ``claimed`` by another agent this pass, and pick the one whose start time is closest to this
-    agent's tmux ``session_started`` (newest first when no start hint is available). The chosen
-    id is added to ``claimed`` so the next same-cwd agent gets a different transcript."""
+    Claude Code stores a session under ``~/.claude/projects/<cwd with / replaced by ->``:
+    ``/Users/me/dev/app`` → ``-Users-me-dev-app``. Both the literal cwd and its resolved form
+    are tried, because they differ where the path crosses a symlink — on macOS
+    ``/home/x`` resolves to ``/System/Volumes/Data/home/x``, and the directory is named after
+    whichever form the agent was started with. Deriving the name forward is exact; reading it
+    backwards would be ambiguous, and we never need to.
+    """
     base = Path.home() / ".claude" / "projects"
-    if not cwd or not base.is_dir():
+    formy, videne = [], set()
+    for c in (cwd, os.path.realpath(cwd)):
+        name = c.replace("/", "-")
+        if name not in videne:
+            videne.add(name)
+            formy.append(base / name)
+    return formy
+
+
+def _claude_info_for_cwd(cwd: str, taken: set | None = None) -> tuple[str | None, str | None]:
+    """Session UUID and concrete model for a `claude` started without ``--resume``.
+
+    The transcript FILE is created (and named after the session uuid) the moment the agent
+    starts — its first line already carries ``sessionId``. Earlier this scanned transcript
+    CONTENT for a matching ``cwd``, which only appears once the session has received a user
+    message, so a young agent showed no id and no model for its first minutes. Going through
+    the project directory instead makes both available from the first second.
+
+    ``taken`` holds ids already assigned to other agents, so two agents sharing one working
+    directory do not both claim the newest transcript.
+    """
+    if not cwd:
+        return None, None
+    taken = taken or set()
+    for d in claude_project_dirs(cwd):
+        if not d.is_dir():
+            continue
+        for f in sorted(d.glob("*.jsonl"), key=lambda x: x.stat().st_mtime, reverse=True):
+            m = UUID_RE.search(f.name)
+            sid = m.group(0) if m else f.stem
+            if sid in taken:
+                continue
+            return sid, _claude_model_from_transcript(str(f))
+    # Fallback: older layouts, or a cwd that does not map to a directory we can see.
+    base = Path.home() / ".claude" / "projects"
+    if not base.is_dir():
         return None, None
     target = os.path.realpath(cwd)
     files = glob.glob(str(base / "**" / "*.jsonl"), recursive=True)
@@ -390,19 +435,10 @@ def _claude_info_for_cwd(cwd: str, session_started: float | None = None,
             if c and os.path.realpath(c) == target:
                 m = UUID_RE.search(os.path.basename(f))
                 sid = m.group(0) if m else Path(f).stem
-                if claimed is None or sid not in claimed:
-                    candidates.append((_transcript_start_ts(f, head), f, sid))
-                break
-    if not candidates:
-        return None, None
-    if session_started is not None:
-        candidates.sort(key=lambda t: abs(t[0] - session_started))
-    else:
-        candidates.sort(key=lambda t: t[0], reverse=True)
-    _, chosen_f, chosen_sid = candidates[0]
-    if claimed is not None:
-        claimed.add(chosen_sid)
-    return chosen_sid, _claude_model_from_transcript(chosen_f)
+                if sid in taken:
+                    continue
+                return sid, _claude_model_from_transcript(f)
+    return None, None
 
 
 def _antigravity_base() -> Path:
@@ -418,6 +454,17 @@ def _pretty_gemini_model(raw: str) -> str:
     return " ".join(p if any(c.isdigit() for c in p) else p.capitalize() for p in s.split("-"))
 
 
+MODEL_ID_RE = re.compile(r"gemini-\d+(?:\.\d+)?-[a-z][a-z0-9.\-]*"
+                         r"|claude-(?:opus|sonnet|haiku|fable)-[0-9][0-9-]*")
+
+
+def _model_like(s: str) -> str | None:
+    """The model id inside a blob, or None. A version must follow the family name — without
+    that, `gemini-backup` and `gemini-20260425-144749` were both read as models."""
+    m = MODEL_ID_RE.search(s or "")
+    return m.group(0) if m else None
+
+
 def _antigravity_model_from_db(sid: str | None) -> str | None:
     """The model a specific Antigravity conversation ran, from its SQLite store (gen_metadata).
     Works even before the global model is set in settings.json."""
@@ -426,19 +473,92 @@ def _antigravity_model_from_db(sid: str | None) -> str | None:
     db = _antigravity_base() / "conversations" / f"{sid}.db"
     if not db.exists():
         return None
-    try:
-        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        ids: list[str] = []
-        for (v,) in con.execute("SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT 5"):
-            s = v.decode("utf-8", "ignore") if isinstance(v, (bytes, bytearray)) else str(v)
-            ids += re.findall(r"gemini-[a-z0-9.\-]+|claude-[a-z]+-[0-9-]+", s)
-        con.close()
-    except sqlite3.Error:
-        return None
+    ids: list[str] = []
+    # A live conversation store is in WAL mode, and `mode=ro` still needs to create the -shm
+    # sidecar — which fails, so the lookup silently returned nothing for every RUNNING agent
+    # (the only kind we ever ask about). `immutable=1` reads the main file without that.
+    for uri in (f"file:{db}?mode=ro", f"file:{db}?immutable=1"):
+        try:
+            con = sqlite3.connect(uri, uri=True)
+            for (v,) in con.execute("SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT 5"):
+                s = v.decode("utf-8", "ignore") if isinstance(v, (bytes, bytearray)) else str(v)
+                # A version must follow the family name, otherwise unrelated strings in the
+                # blob match: `gemini-backup` and `gemini-20260425-144749` both did.
+                ids += MODEL_ID_RE.findall(s)
+            con.close()
+            break
+        except sqlite3.Error:
+            continue
     if not ids:
         return None
     raw = ids[0]
     return _pretty_claude_model(raw) if raw.startswith("claude") else _pretty_gemini_model(raw)
+
+
+def open_files(pids: list) -> list[str]:
+    """Paths a process currently holds open. Linux reads /proc directly; macOS shells out to
+    lsof. Best-effort: an empty list simply means we fall back to other clues."""
+    out = []
+    for pid in pids or []:
+        fd = Path("/proc") / str(pid) / "fd"
+        if fd.is_dir():
+            for link in fd.iterdir():
+                try:
+                    out.append(os.path.realpath(link))
+                except OSError:
+                    pass
+            continue
+        # -Fn is lsof's machine-readable mode: one field per line, names prefixed with "n".
+        # Parsing the human table by column breaks on paths with spaces and on rows where a
+        # column is empty — which is why it silently returned nothing the first time.
+        # lsof lives in /usr/sbin on macOS, which is not on the PATH a tmux agent inherits —
+        # calling it by bare name silently produced nothing at all.
+        exe = shutil.which("lsof") or next(
+            (c for c in ("/usr/sbin/lsof", "/usr/bin/lsof") if os.path.exists(c)), None)
+        if not exe:
+            continue
+        r = _run([exe, "-p", str(pid), "-Fn"], timeout=3)
+        if r and r.returncode == 0:
+            for line in r.stdout.splitlines():
+                if line.startswith("n/"):
+                    out.append(line[1:])
+    return out
+
+
+def antigravity_label(settings_model: str | None, sid: str | None, cmds: list[str],
+                      fallback: str) -> str:
+    """The model tag for an Antigravity row — the SINGLE place that decides it.
+
+    Order: the globally selected model, then the conversation's own store (which is why this
+    runs AFTER the id is resolved — asking with no id was the reason a fresh agy stayed
+    unlabelled even once its id showed up), then `--model` on argv, then the kind name.
+    """
+    return (settings_model or _antigravity_model_from_db(sid)
+            or _model_from_argv(cmds) or fallback)
+
+
+def antigravity_sid(mapped: str | None, pids: list) -> str | None:
+    """Conversation id for an Antigravity row — the SINGLE place that decides it.
+
+    The workspace map wins where it exists; the presence lock covers a session young enough
+    that the map has not been written yet.
+    """
+    return mapped or _antigravity_sid_from_presence(pids)
+
+
+def _antigravity_sid_from_presence(pids: list) -> str | None:
+    """The conversation id of a RUNNING agy, from the presence lock it holds open.
+
+    ``~/.gemini/antigravity-cli/presence/<conversation-uuid>.lock`` is opened at startup, so
+    this answers immediately — unlike cache/last_conversations.json, which is only written
+    once the conversation has been persisted and left a brand-new agent with no id at all.
+    """
+    for f in open_files(pids):
+        if "/presence/" in f and f.endswith(".lock"):
+            m = UUID_RE.search(os.path.basename(f))
+            if m:
+                return m.group(0)
+    return None
 
 
 def _antigravity_info_for_cwd(cwd: str) -> tuple[str | None, str | None]:
@@ -459,7 +579,10 @@ def _antigravity_info_for_cwd(cwd: str) -> tuple[str | None, str | None]:
         model = d.get("model") or None
     except (OSError, ValueError):
         pass
-    return sid, model or _antigravity_model_from_db(sid)
+    # The DB lookup deliberately does NOT happen here: it needs the conversation id, and at
+    # this point we may not have one yet (the workspace map is empty for a young session).
+    # antigravity_label() retries it once the id is known — from the presence lock if need be.
+    return sid, model
 
 
 def _classify(cmds: list[str], extra_matches: list[tuple]) -> tuple[str, str, str | None]:
@@ -479,9 +602,24 @@ def _classify(cmds: list[str], extra_matches: list[tuple]) -> tuple[str, str, st
 
 
 def _pretty_model(raw: str) -> str:
-    """'openai/gpt-5.5' → 'GPT-5.5'; leaves other model names readable."""
-    raw = raw.split("/")[-1]
-    return raw.upper() if raw[:1].lower() in ("g", "o") else raw
+    """OpenAI ids the way Claude's already read: ``gpt-6-astra`` → ``GPT-6 Astra``,
+    ``openai/gpt-5.6-sol`` → ``GPT-5.6 Sol``, ``gpt-5.5`` → ``GPT-5.5``, ``o3-mini`` → ``O3 Mini``.
+
+    Upper-casing the whole id (``GPT-6-ASTRA``) put a shouting tag next to ``Fable 5.1``
+    (Petr, 2026-09-04). Family stays upper-case, the version keeps its dash, the codename
+    after it becomes a capitalised word. Anything that is not an OpenAI id is left alone.
+    """
+    raw = (raw or "").split("/")[-1]
+    if raw[:1].lower() not in ("g", "o"):
+        return raw
+    parts = raw.split("-")
+    label = parts[0].upper()
+    rest = parts[1:]
+    if rest and rest[0][:1].isdigit():          # version glued to the family: GPT-5.6, GPT-4o
+        label += "-" + rest[0]
+        rest = rest[1:]
+    words = [w.capitalize() if w[:1].isalpha() else w for w in rest]
+    return " ".join([label] + words)
 
 
 def _codex_model() -> str | None:
@@ -556,22 +694,16 @@ def _openclaw_model() -> str | None:
     return _pretty_model(found[0]) if found else None
 
 
+
 def daemon_model(name: str) -> str | None:
     """Concrete model a known daemon runs (best-effort, for the tag)."""
     n = name.lower()
     if "openclaw" in n:
         return _openclaw_model()
-#    if "hermes" in n:
-#        # Hermes here runs on the openai-codex provider → same model as Codex.
-#        return _codex_model() or _codex_model_any()
-
     if "hermes" in n or "ciri" in n:
-        return (
-            _hermes_model()
-            or _codex_model()
-            or _codex_model_any()
-        )
-
+        # Hermes picks its own model on the openai-codex provider (model.default in
+        # ~/.hermes/config.yaml); fall back to the Codex rollout model if unreadable.
+        return _hermes_model() or _codex_model() or _codex_model_any()
     return None
 
 ##NEW LINES
@@ -660,6 +792,17 @@ def display_model(model: str | None) -> str | None:
 
 ##NEW LINES
 
+def vendor_for_agent(kind: str | None, label: str | None) -> str | None:
+    """Tag colour for one agent row — the SINGLE place that decides it.
+
+    A recognised kind wins (Codex stays OpenAI orange even if the label is odd); anything
+    matched by a user-supplied pattern has no built-in kind, so the model name decides.
+    Before this was factored out, daemons used the model fallback and tmux agents did not,
+    so the same model showed a green tag in one row and a grey one in the next.
+    """
+    return KIND_VENDOR.get(kind or "") or vendor_for_model(label)
+
+
 def vendor_for_model(model: str | None) -> str | None:
     """Maker → tag colour, inferred from a model name."""
     if not model:
@@ -681,7 +824,9 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
     procs, children = _proc_table()
     codex_model = _codex_model()
     agents = []
-    claimed_claude: set[str] = set()   # transcript ids already assigned this pass (same-cwd disambiguation)
+    # Session ids already claimed in this pass, so two agents sharing one working directory
+    # cannot both be handed the newest transcript in it.
+    prirazena: set = set()
     for s in tmux_sessions():
         pids = _pane_pids(s["name"])
         tree = _subtree(pids, children)
@@ -706,26 +851,27 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
         # the concrete model by cwd, so both show up (just like Codex does).
         if kind == "claude-code":
             cwd = _session_cwd(s["name"])
-            csid, cmodel = _claude_info_for_cwd(cwd, s.get("created"), claimed_claude) if cwd else (None, None)
+            csid, cmodel = _claude_info_for_cwd(cwd, prirazena) if cwd else (None, None)
             if sid is None:
                 sid = csid
-            if cmodel:
-#                label = cmodel
-                label = display_model(cmodel)
-
+            # Transcript first — it reports the model actually in use (a session can be
+            # switched with /model). argv is the fallback for a session young enough that
+            # no transcript exists yet.
+            label = label_for_claude(cmodel, ranked, label)
         elif kind == "antigravity":
             cwd = _session_cwd(s["name"])
             asid, amodel = _antigravity_info_for_cwd(cwd) if cwd else (None, None)
             if sid is None:
-                sid = asid
-            if amodel:
-#                label = amodel
-                label = display_model(amodel)
+                sid = antigravity_sid(asid, tree)
+            label = antigravity_label(amodel, sid, ranked, label)
         age = int(now - s["created"]) if s["created"] else None
         resume = RESUME_TEMPLATES.get(kind, "").format(id=sid) if (sid and kind in RESUME_TEMPLATES) else None
+        if sid:
+            prirazena.add(sid)
         agents.append({
             "name": s["name"], "kind": kind, "label": label, "session_id": sid,
-            "vendor": KIND_VENDOR.get(kind), "alive": kind != "shell", "age": age,
+            "vendor": vendor_for_agent(kind, label),
+            "alive": kind != "shell", "age": age,
             "resume_cmd": resume, "pids": sorted(tree),
         })
     return agents
@@ -842,7 +988,11 @@ def daemon_status(daemons: list[dict]) -> list[dict]:
         url = d.get("health_url")
         if url:
             entry["http_ok"] = _http_ok(url)
-            entry["up"] = entry["http_ok"]      # health endpoint is the source of truth
+            # Up if EITHER signal is positive. Health endpoint is primary, but the process match
+            # is a valid fallback: a new daemon version can move/rename its /health endpoint while
+            # the process keeps running fine (e.g. Hermes still answering on Telegram). Requiring
+            # http alone then falsely marks a live daemon "down" and triggers a needless restart.
+            entry["up"] = entry["http_ok"] or proc_up
         else:
             entry["up"] = proc_up
         out.append(entry)
