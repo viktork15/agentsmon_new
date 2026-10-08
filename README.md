@@ -152,6 +152,20 @@ hash (`dashboard.auth.pwhash`), never in plaintext. Remove the `auth` block to t
     own bot is auto-detected from its config at setup.
 
   If nothing is connected, no icon appears — it's a soft integration, never required.
+- **services[].command** — a shell command or script as the health check (exit 0 = up). It may
+  print a JSON object: `{"up": true, "latency_ms": 12, "detail": "tailscale=up openvpn=up"}` —
+  `up` overrides the exit code, `latency_ms` the measured wall time, `detail` the card's status
+  line. `timeout_seconds` (default 15) caps a hanging check. Combine with `process`/`health_url`
+  and the card is up only when all of them are.
+- **Local check modules (`modules_dir`, default `~/.config/agentsmon/modules/`)** — every
+  executable file in that folder becomes a service card automatically, with the same uptime
+  history, SLA and timeline as any other service: a VPN tunnel, a database, your own product's
+  endpoint, a backup job… Write a three-line shell script, `chmod +x`, done. Optional header
+  lines set the card: `# agentsmon: name=VPN to the office, latency_label=round trip,
+  timeout_seconds=7`. Files starting with `_` or `.` are helpers and ignored; a service of the
+  same name written by hand in `services[]` wins. The folder is yours — nothing in it is part of
+  this repo, so private checks stay private while the dashboard itself keeps updating from git.
+
 - **probe.min_outage_samples** — how many consecutive failed probes count as a real outage for
   the **Uptime** metric (default 3); isolated transient blips don't reset uptime (SLA still
   counts them).

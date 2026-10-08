@@ -6,6 +6,7 @@ config, and installs the boot service. Designed to need almost no typing.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -224,6 +225,104 @@ def _format_agent_cmd(template: str, *, sid: str | None = None, cwd: str | None 
     )
 
 
+def pretrust_claude(cwd: str, home: Path | None = None) -> str:
+    """Answer Claude Code's first-run prompts up front. Returns what was recorded, "" if nothing.
+
+    Claude Code asks "Is this a project you created or one you trust?" the first time it runs in a
+    directory, and waits for an answer. Launched detached into tmux there is nobody to answer: the
+    agent never starts, writes no session, and the dashboard stays empty — it looks like the tool
+    failed to add it (2026-09-03, on a freshly installed server). Sending the greeting afterwards
+    doesn't reliably save it either, because the keys land before the TUI is up.
+
+    The user has just named this directory for an agent they are creating, so recording that trust
+    is what they asked for — but it IS a security prompt, so `new()` says out loud that it did it.
+    Written atomically: a half-written config would lock the user out of Claude entirely.
+    """
+    p = (home or Path.home()) / ".claude.json"
+    try:
+        d = json.loads(p.read_text("utf-8")) if p.exists() else {}
+    except (OSError, ValueError):
+        return ""                      # unreadable or not JSON — never overwrite what we can't read
+    if not isinstance(d, dict):
+        return ""
+    zapsano = []
+    if not d.get("hasCompletedOnboarding"):
+        d["hasCompletedOnboarding"] = True
+        zapsano.append("onboarding")
+    projekty = d.setdefault("projects", {})
+    projekt = projekty.setdefault(cwd, {})
+    if not projekt.get("hasTrustDialogAccepted"):
+        projekt["hasTrustDialogAccepted"] = True
+        zapsano.append(f"trusted folder {cwd}")
+    if zapsano and not _zapis_json(p, d):
+        return ""
+    zapsano += _skip_bypass_warning(home or Path.home())
+    return " + ".join(zapsano)
+
+
+def _zapis_json(p: Path, data: dict) -> bool:
+    """Atomic, owner-only write. A half-written config would lock the user out of Claude."""
+    tmp = p.with_name(p.name + ".agentsmon-tmp")
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(data, indent=2), "utf-8")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, p)
+        return True
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        return False
+
+
+def _skip_bypass_warning(home: Path) -> list[str]:
+    """Third first-run gate. `--dangerously-skip-permissions` prints a WARNING screen whose
+    highlighted option is "No, exit", and waits. It is recorded in ~/.claude/settings.json, NOT
+    in ~/.claude.json, so answering the trust dialog alone still leaves the agent stuck on a
+    brand-new machine — measured on a pristine HOME, 2026-09-03.
+
+    Every agent this wizard launches runs in that mode; the user chose that by creating the
+    agent, and `new` prints what was recorded."""
+    p = home / ".claude" / "settings.json"
+    try:
+        d = json.loads(p.read_text("utf-8")) if p.exists() else {}
+    except (OSError, ValueError):
+        return []                      # unreadable or not JSON — never overwrite what we can't read
+    if not isinstance(d, dict) or d.get("skipDangerousModePermissionPrompt"):
+        return []
+    d["skipDangerousModePermissionPrompt"] = True
+    return ["bypass-mode warning"] if _zapis_json(p, d) else []
+
+
+def claude_is_logged_in(home: Path | None = None) -> bool:
+    """Best-effort: does Claude Code have credentials to work with?
+
+    The one first-run gate that CANNOT be pre-answered is the login — and it must not be, it is
+    authentication. A fresh agent then starts fine but sits at "Not logged in · Run /login" and
+    does nothing, which looks exactly like a broken tool. Saying so out loud beats a silent
+    half-success. Env-var auth counts; a false "logged in" only costs us the hint."""
+    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+        return True
+    return ((home or Path.home()) / ".claude" / ".credentials.json").exists()
+
+
+def wait_for_tui(name: str, timeout: float = 25.0) -> bool:
+    """Wait until the tmux pane runs something other than a shell — i.e. the agent TUI is up.
+
+    The greeting used to be sent after a flat 4 s. On a slow or cold machine the TUI isn't up yet,
+    the keys go nowhere, and the agent registers neither session id nor model until the user types
+    something themselves."""
+    import time
+    shells = {"sh", "bash", "zsh", "fish", "dash", "-sh", "-bash", "-zsh"}
+    konec = time.monotonic() + timeout
+    while time.monotonic() < konec:
+        r = subprocess.run(["tmux", "display-message", "-p", "-t", name, "#{pane_current_command}"],
+                           capture_output=True, text=True)
+        if r.returncode == 0 and r.stdout.strip() and r.stdout.strip() not in shells:
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def _auto_restart(a: dict, cwd: str | None = None) -> str:
     """Build the restart command for a detected agent — no user typing needed."""
     tpl = RESTART_DEFAULTS.get(a["kind"], "")
@@ -248,11 +347,14 @@ COMMON_DAEMONS = [
     {"name": "OpenClaw", "pattern": "openclaw", "binary": "openclaw", "name_color": "red",
      "health_url": "http://127.0.0.1:18789/health",
      "restart": "nohup openclaw gateway > ~/openclaw.log 2>&1 &"},
-    # Liveness comes from the health_url below, NOT this pattern (process names differ across
-    # installs). The pattern is best-effort, only for the uptime column: 'hermes gateway' matches
-    # the real `…/bin/hermes gateway run` and avoids the OpenClaw node gateway launched from a
-    # .hermes/node path (whose command line is `…/index.js gateway`, no "hermes gateway").
-    {"name": "Hermes", "pattern": "hermes_cli.main.*gateway|hermes gateway", "binary": "hermes", "name_color": "gold",
+    # Liveness = health_url OR process match (either signal counts, see detect.daemon_status),
+    # so a health-endpoint change in a new Hermes version can't blind us while the process runs.
+    # The pattern must match BOTH Hermes launch forms: the old `…/bin/hermes gateway run` AND the
+    # current venv/pip form `…python -m hermes_cli.main gateway run`. A bare "hermes gateway"
+    # matches only the old form (the new one has `hermes_cli.main gateway`, no "hermes gateway"),
+    # so we alternate. Neither form matches the OpenClaw node gateway (`…/index.js gateway`).
+    {"name": "Hermes", "pattern": r"hermes gateway run|hermes_cli\.main gateway",
+     "binary": "hermes", "name_color": "gold",
      "health_url": "http://127.0.0.1:8642/health",
      "restart": "nohup hermes gateway run --replace > ~/hermes.log 2>&1 &"},
 ]
@@ -581,6 +683,16 @@ def new() -> int:
             encoding="utf-8")
         print(f"  • wrote {instr_file}")
 
+    # Answer Claude's first-run prompts BEFORE launching, or the agent sits on the trust dialog
+    # forever and never appears anywhere.
+    if chosen["kind"] == "claude-code":
+        zapsano = pretrust_claude(cwd)
+        if zapsano:
+            print(f"  ✓ pre-answered Claude's first-run prompts ({zapsano})")
+        if not claude_is_logged_in():
+            print("  ! Claude is not logged in yet — the agent will start but can't work.")
+            print(f"    Log in once:  tmux attach -t {name}   then  /login")
+
     # Create the session detached and launch the agent inside it.
     mk = subprocess.run(["tmux", "new-session", "-d", "-s", name, "-c", cwd], capture_output=True, text=True)
     if mk.returncode != 0:
@@ -598,11 +710,10 @@ def new() -> int:
     print(f"\n✓ Created '{name}' ({chosen['label']}), launched in tmux, and added to monitoring.")
     service.install()
     # Kick off a first turn so the agent registers its session id + model right away — a brand-new
-    # session shows neither until its first message. Give the TUI a moment to come up, then send a
-    # short greeting. Best-effort: if a one-time onboarding screen shows instead, the first real
-    # message you send registers it anyway.
-    import time
-    time.sleep(4)
+    # session shows neither until its first message. Wait for the TUI to actually come up first;
+    # a flat sleep sent the keys into a shell on a cold machine and nothing registered.
+    if not wait_for_tui(name):
+        print("  ! the agent TUI didn't come up in time — send it a first message yourself")
     subprocess.run(["tmux", "send-keys", "-t", name, "Hello! Briefly introduce yourself.", "Enter"],
                    capture_output=True)
     import shlex
