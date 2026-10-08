@@ -46,20 +46,6 @@ def _log(msg: str) -> None:
         pass
 
 
-def heartbeat_path() -> Path:
-    return config.state_dir() / "keepalive_heartbeat"
-
-
-def _heartbeat() -> None:
-    """Stamp the time of the last completed pass. A supervisor that silently stops running is
-    the worst failure mode (dead agents stay dead and nothing says so); a fresh stamp is the
-    only proof it is alive — a local module can watch it, the dashboard shows nothing otherwise."""
-    try:
-        heartbeat_path().write_text(str(int(time.time())), encoding="utf-8")
-    except OSError:
-        pass
-
-
 def _acquire_lock(stale: int = 300) -> bool:
     """Directory lock; steal it if older than *stale* seconds (a crashed previous run)."""
     lock = config.state_dir() / "keepalive.lock"
@@ -187,7 +173,6 @@ def run(loop: bool = False) -> int:
                 n = tick(cfg)
                 if n:
                     _log(f"pass complete: {n} restart(s)")
-                _heartbeat()
             finally:
                 _release_lock()
         else:

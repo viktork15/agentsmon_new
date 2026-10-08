@@ -8,7 +8,6 @@ by pgrep) and runs one keepalive pass works everywhere, no login session require
 """
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys
@@ -31,6 +30,50 @@ def _pid_alive(pid: int) -> bool:
     except (OSError, ProcessLookupError):
         return False
 
+
+def _stop_dashboard() -> None:
+    """Stop the running dashboard precisely via its PID file, then wait for the port to free.
+
+    Falls back to a tightened pgrep/pkill match only when no usable PID file exists, so we don't
+    rely on the broad ``-f "agentsmon dashboard"`` pattern that could match unrelated processes."""
+    pid_path = config.state_dir() / "dashboard.pid"
+    pid = None
+    try:
+        pid = int(pid_path.read_text("utf-8").strip())
+    except (OSError, ValueError):
+        pid = None
+
+    if pid and _pid_alive(pid):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+        for i in range(25):
+            if not _pid_alive(pid):
+                break
+            if i == 15:                       # stubborn → escalate to SIGKILL
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
+            time.sleep(0.3)
+        try:
+            pid_path.unlink()
+        except OSError:
+            pass
+        return
+
+    # No PID file (older install / never started): fall back to a precise command match.
+    if shutil.which("pkill"):
+        pat = "-m agentsmon dashboard"
+        subprocess.run(["pkill", "-f", "--", pat], capture_output=True)
+        for i in range(25):
+            gone = subprocess.run(["pgrep", "-f", "--", pat], capture_output=True).returncode != 0
+            if gone:
+                break
+            if i == 15:
+                subprocess.run(["pkill", "-9", "-f", "--", pat], capture_output=True)
+            time.sleep(0.3)
 
 
 def _python() -> str:
@@ -60,67 +103,19 @@ export AGENTSMON_CONFIG="{config.DEFAULT_PATH}"
 export AGENTSMON_STATE="{config.state_dir()}"
 PY="{_python()}"
 mkdir -p "{state}"
-# Guard on the dashboard's own pidfile (a plain `pgrep -f "agentsmon dashboard"` also matched any
-# shell whose command line mentioned the dashboard, and then nothing was started — 2026-09-04).
 PIDFILE="{state}/dashboard.pid"
-if ! ( [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null ) \\
-   && ! pgrep -f -- "-m agentsmon dashboard$" >/dev/null 2>&1; then
+# Start the dashboard only if it isn't already running. Prefer the PID file (precise),
+# fall back to a tightened command match so a missing PID file can't spawn a duplicate.
+if {{ [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; }} || \\
+   pgrep -f -- "-m agentsmon dashboard" >/dev/null 2>&1; then
+  :
+else
   nohup "$PY" -m agentsmon dashboard >> "{log}" 2>&1 &
 fi
 "$PY" -m agentsmon keepalive >> "{log}" 2>&1
 """, encoding="utf-8")
     path.chmod(0o755)
     return path
-
-
-def _dashboard_pids() -> list[int]:
-    """The running dashboard's PID(s): the pidfile it writes on start, else a pattern that only
-    matches the dashboard's own command line (``-m agentsmon dashboard``). A bare
-    ``pkill -f "agentsmon dashboard"`` also killed any shell script whose text mentioned the
-    dashboard — the very script driving the install (2026-09-04)."""
-    from . import dashboard as _dash
-    pids: list[int] = []
-    try:
-        pid = int(_dash.pidfile_path().read_text("utf-8").strip())
-        os.kill(pid, 0)                              # still alive?
-        pids.append(pid)
-    except (OSError, ValueError):
-        pass
-    if not pids:
-        out = subprocess.run(["pgrep", "-f", r"-m agentsmon dashboard$"], capture_output=True, text=True).stdout
-        pids = [int(x) for x in out.split() if x.isdigit() and int(x) != os.getpid()]
-    return pids
-
-
-def stop_dashboard(wait: float = 8.0) -> None:
-    """Stop the running dashboard and WAIT until it is gone (port freed) before relaunching.
-    Otherwise the launcher's guard still sees the dying process, or the new one hits "address
-    already in use" — either way the STALE pre-config dashboard keeps serving."""
-    import signal
-    pids = _dashboard_pids()
-    for pid in pids:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            pass
-    deadline = time.time() + wait
-    while pids and time.time() < deadline:
-        pids = [p for p in pids if _alive(p)]
-        if pids and time.time() > deadline - wait / 2:
-            for pid in pids:
-                try:
-                    os.kill(pid, signal.SIGKILL)  # stubborn → escalate
-                except OSError:
-                    pass
-        time.sleep(0.3)
-
-
-def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
 
 
 def install() -> int:
@@ -144,9 +139,8 @@ def install() -> int:
         return 1
     # Stop any dashboard already running, so the launcher restarts it with the CURRENT config
     # (host/port/auth). Without this, a re-run can't change a live dashboard — its pgrep guard
-    # would just leave the stale one bound to the old address. (Safe: our own process is
-    # "agentsmon setup/service", not "agentsmon dashboard".)
-    stop_dashboard()
+    # would just leave the stale one bound to the old address.
+    _stop_dashboard()
     # Kick it once now so the dashboard comes up immediately on the configured host.
     subprocess.run(["sh", str(launcher)], capture_output=True)
     print("  ✓ installed cron launcher (@reboot + every minute) — survives logout/reboot.")

@@ -33,44 +33,10 @@ command -v tmux >/dev/null || say "note: tmux not found — agents run in tmux, 
 if [ -f pyproject.toml ] && grep -q "agents-monitoring" pyproject.toml 2>/dev/null; then
   SRC="$(pwd)"; say "Installing from current directory"
 else
+  command -v git >/dev/null || err "git not found."
   SRC="${HOME}/.agentsmon-src"
-  # git first — a real clone keeps `agentsmon update` working. But git over HTTPS can be
-  # refused where plain HTTPS is fine: from a datacentre IP that GitHub rate-limits for
-  # anonymous git, a PUBLIC repo answers 401 and git stops to ask for a password. On a fresh
-  # server that is the user's first impression of the tool, and an installer must never block
-  # on a prompt, so fall back to the source archive.
-  fetch_tarball() {
-    say "Fetching the source archive (no git)"
-    tmp="$(mktemp -d)"
-    url="https://codeload.github.com/petrludwig-collab/AgentsMonitoring/tar.gz/refs/heads/main"
-    curl -fsSL --retry 2 "$url" -o "$tmp/src.tgz" || return 1
-    tar xzf "$tmp/src.tgz" -C "$tmp" || return 1
-    dir="$(find "$tmp" -maxdepth 1 -type d -name 'AgentsMonitoring-*' | head -1)"
-    [ -n "$dir" ] || return 1
-    rm -rf "$SRC"; mkdir -p "$SRC"; cp -R "$dir"/. "$SRC"/ || return 1
-    rm -rf "$tmp"
-    say "Installed from archive — 'agentsmon update' will ask you to re-run this installer."
-  }
-  if [ -d "$SRC/.git" ]; then
-    say "Updating $SRC"
-    GIT_TERMINAL_PROMPT=0 git -C "$SRC" pull --ff-only || fetch_tarball || err "Could not fetch the project."
-  elif command -v git >/dev/null 2>&1; then
-    say "Cloning into $SRC"
-    # GitHub answers 401 to anonymous git from datacentre IPs intermittently — the very next
-    # attempt usually succeeds (Hermes' own installer recovers the same way, on try 2 of 4).
-    # Retry before giving up on git, because a real clone is what keeps `update` working;
-    # the tarball is the last resort, not the second choice.
-    n=1
-    while [ "$n" -le 3 ]; do
-      GIT_TERMINAL_PROMPT=0 git clone --depth 1 "$REPO" "$SRC" 2>/dev/null && break
-      rm -rf "$SRC"
-      n=$((n+1))
-      [ "$n" -le 3 ] && { say "Clone refused, retrying ($n/3)"; sleep 2; }
-    done
-    [ -d "$SRC/.git" ] || fetch_tarball || err "Could not fetch the project."
-  else
-    fetch_tarball || err "Could not fetch the project (no git, and the archive download failed)."
-  fi
+  if [ -d "$SRC/.git" ]; then say "Updating $SRC"; git -C "$SRC" pull --ff-only
+  else say "Cloning into $SRC"; git clone --depth 1 "$REPO" "$SRC"; fi
 fi
 
 # pip is OPTIONAL — the package is pure standard library. Try pip (so hooks/other tools can

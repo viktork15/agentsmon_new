@@ -8,8 +8,6 @@ open builds the history — no separate probe service required.
 from __future__ import annotations
 
 import http.client
-import json
-import os
 import subprocess
 import time
 import urllib.parse
@@ -51,47 +49,6 @@ def _http(url: str, timeout: float = 4) -> tuple[bool, float | None]:
                 pass
 
 
-def _command(cmd: str, timeout: float = 15) -> tuple[bool, float | None, str]:
-    """Run a check command/script. Exit code 0 = up. If stdout is a JSON object it may carry
-    ``up`` (bool), ``latency_ms`` (number) and ``detail`` (str) — that is the whole module
-    contract, so a module can be a three-line shell script or anything that prints JSON.
-    Without JSON, latency is the command's wall time and detail its first output line."""
-    t0 = time.time()
-    try:
-        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout,
-                           env={**os.environ, "AGENTSMON_MODULE": "1"})
-    except subprocess.TimeoutExpired:
-        return False, None, f"timeout after {timeout:.0f}s"
-    except OSError as e:
-        return False, None, f"cannot run: {e.__class__.__name__}"
-    lat = round(time.time() - t0, 3)
-    ok = r.returncode == 0
-    out = (r.stdout or "").strip()
-    detail = (out or (r.stderr or "").strip()).splitlines()[0][:200] if (out or r.stderr) else ("up" if ok else f"exit {r.returncode}")
-    if out.startswith("{"):
-        try:
-            d = json.loads(out)
-            if isinstance(d, dict):
-                if "up" in d:
-                    ok = bool(d["up"]) and ok
-                if d.get("latency_ms") is not None:
-                    lat = round(float(d["latency_ms"]) / 1000, 3)
-                if d.get("detail"):
-                    detail = str(d["detail"])[:200]
-        except (ValueError, TypeError):
-            pass
-    return ok, lat, detail
-
-
-def _fresh_sample(name: str, cfg: dict) -> dict | None:
-    """Latest recorded sample for a service, if it is younger than two probe intervals."""
-    cur = db.last(name)
-    if not cur:
-        return None
-    max_age = 2 * int(cfg.get("probe", {}).get("interval_seconds", 60)) + 5
-    return cur if (time.time() - cur["ts"]) <= max_age else None
-
-
 def _system_health(cfg: dict) -> tuple[bool, float | None, str]:
     """Availability of the **whole multi-agent system**, not any single component.
 
@@ -120,15 +77,6 @@ def _system_health(cfg: dict) -> tuple[bool, float | None, str]:
     for c in checks:
         name = c.get("name") or c.get("process") or c.get("pattern") or "?"
         url = c.get("health_url")
-        if c.get("command"):
-            # A module is judged by its latest recorded sample — running every module again
-            # inside the system check would double the load (and the wait) for no new information.
-            cur = _fresh_sample(name, cfg)
-            if cur is None or not cur["up"]:
-                down.append(name)
-            elif cur.get("latency") is not None:
-                lats.setdefault("cmd:" + name, cur["latency"])
-            continue
         if url:
             ok, lat = _http(url)
             if lat is not None:
@@ -139,19 +87,6 @@ def _system_health(cfg: dict) -> tuple[bool, float | None, str]:
             pat = c.get("process") or c.get("pattern") or ""
             if pat and not _proc_up(pat):
                 down.append(name)
-
-    # The supervisor itself. A keepalive that silently stopped is a system outage in waiting:
-    # nothing would revive the next dead agent. Judged by its heartbeat (stamped every pass).
-    ka = cfg.get("keepalive", {})
-    if ka.get("enabled", True):
-        from . import keepalive as _keepalive
-        try:
-            age = time.time() - _keepalive.heartbeat_path().stat().st_mtime
-        except OSError:
-            age = None
-        limit = 3 * int(ka.get("interval_seconds", 60)) + 30
-        if age is None or age > limit:
-            down.append("keepalive (no pass in %s)" % ("a while" if age is None else f"{int(age)}s"))
 
     uniq: list[str] = []
     for n in down:
@@ -178,12 +113,4 @@ def probe_once(cfg: dict) -> None:
             http_ok, lat = _http(s["health_url"])
             ok = proc and http_ok
             detail += f" http={'ok' if http_ok else 'down'}"
-        if s.get("command"):
-            cmd_ok, cmd_lat, cmd_detail = _command(s["command"], float(s.get("timeout_seconds", 15)))
-            ok = ok and cmd_ok
-            lat = lat if lat is not None else cmd_lat
-            # The command's own words lead; process/HTTP are mentioned only when they fail.
-            extra = [x for x, bad in (("proc=down", s.get("process") and not proc),
-                                      ("http=down", s.get("health_url") and lat is None and not ok)) if bad]
-            detail = " ".join([cmd_detail] + extra)
         db.record(name, ok, lat, detail)

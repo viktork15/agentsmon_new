@@ -32,24 +32,10 @@ DEFAULTS = {
     # Non-tmux processes to pin at the TOP of the Persistent-agents table (e.g. OpenClaw, Hermes).
     # Each: name, process (pgrep -f), tag (display label), vendor (anthropic|openai|google for the tag colour).
     "pinned_daemons": [],
-    # Local check modules: every executable in this folder becomes a service card (exit 0 = up,
-    # optional JSON on stdout: {"up", "latency_ms", "detail"}). Header lines "# agentsmon: key=value"
-    # may set name / latency_label / timeout_seconds. Nothing here is required or published.
-    "modules_dir": "~/.config/agentsmon/modules",
     "dashboard": {"host": "127.0.0.1", "port": 8765, "poll_seconds": 15},
     "probe": {"interval_seconds": 60, "sla_window_days": 90, "timeline_days": 90, "min_outage_samples": 3},
     "keepalive": {"enabled": True, "interval_seconds": 60},
 }
-
-
-def _expand(obj):
-    if isinstance(obj, str):
-        return os.path.expanduser(os.path.expandvars(obj))
-    if isinstance(obj, list):
-        return [_expand(x) for x in obj]
-    if isinstance(obj, dict):
-        return {k: _expand(v) for k, v in obj.items()}
-    return obj
 
 
 def load(path: Path | None = None) -> dict:
@@ -62,64 +48,7 @@ def load(path: Path | None = None) -> dict:
                 cfg[k].update(v)
             else:
                 cfg[k] = v
-    cfg["services"] = list(cfg.get("services", [])) + discover_modules(cfg)
     return cfg
-
-
-MODULE_HEADER = re.compile(r"^\s*(?:#|//|;|--)\s*agentsmon:\s*(.+)$")
-
-
-def _module_header(path: Path) -> dict:
-    """``# agentsmon: name=VPN do Stovky, latency_label=round trip`` in the first lines of a
-    module → its card settings. Absent = defaults (name from the file name)."""
-    out: dict = {}
-    try:
-        with open(path, encoding="utf-8", errors="ignore") as f:
-            for _ in range(10):
-                line = f.readline()
-                if not line:
-                    break
-                m = MODULE_HEADER.match(line)
-                if not m:
-                    continue
-                for part in m.group(1).split(","):
-                    if "=" in part:
-                        k, v = part.split("=", 1)
-                        out[k.strip()] = v.strip()
-    except OSError:
-        pass
-    return out
-
-
-def discover_modules(cfg: dict) -> list[dict]:
-    """Executable files in ``modules_dir`` as service entries. Files starting with ``_`` or ``.``
-    are helpers and ignored; a module whose name already exists in ``services`` is skipped, so a
-    hand-written entry always wins."""
-    d = Path(_expand(cfg.get("modules_dir") or ""))
-    if not str(d) or not d.is_dir():
-        return []
-    taken = {s.get("name") for s in cfg.get("services", []) if s.get("name")}
-    found = []
-    for f in sorted(d.iterdir()):
-        if not f.is_file() or f.name.startswith((".", "_")) or not os.access(f, os.X_OK):
-            continue
-        hdr = _module_header(f)
-        name = hdr.get("name") or f.stem.replace("_", " ").replace("-", " ").strip().title()
-        if name in taken:
-            continue
-        entry = {"name": name, "command": str(f), "source": "module"}
-        if hdr.get("latency_label"):
-            entry["latency_label"] = hdr["latency_label"]
-        if hdr.get("timeout_seconds"):
-            try:
-                entry["timeout_seconds"] = float(hdr["timeout_seconds"])
-            except ValueError:
-                pass
-        if hdr.get("metric"):
-            entry["metric"] = hdr["metric"]
-        found.append(entry)
-        taken.add(name)
-    return found
 
 
 def save(cfg: dict, path: Path | None = None) -> Path:

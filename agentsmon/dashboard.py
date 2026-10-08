@@ -13,7 +13,6 @@ import base64
 import hashlib
 import hmac
 import json
-from pathlib import Path
 import os
 import shutil
 import subprocess
@@ -28,17 +27,6 @@ from . import config, db, detect, keepalive, probe
 def password_hash(password: str) -> str:
     """Hash a dashboard password for storage (we never keep the plaintext in config)."""
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
-
-
-def _action_allowed(headers) -> bool:
-    """A state-changing request must carry the ``X-Agentsmon`` header the page sets. A form or a
-    plain fetch from another site cannot add a custom header without a CORS preflight (which
-    this server never answers), so a page you happen to have open elsewhere cannot stop or
-    restart your agents behind your back — even with HTTP auth cached (audit 2026-09-05)."""
-    try:
-        return (headers.get("X-Agentsmon") or "").strip().lower() == "action"
-    except Exception:
-        return False
 
 
 def _auth_ok(header: str | None, user: str, pwhash: str) -> bool:
@@ -56,8 +44,8 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Agents Monitoring</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
-<script src="/static/tailwind.js"></script>
-<style>.bar{transition:opacity .15s ease}.bar:hover{opacity:.65}.copied-flash{color:#059669!important;transition:color .1s}#toast{transition:opacity .2s ease}
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
 .bar{transition:opacity .15s ease}.bar:hover{opacity:.65}.copied-flash{color:#059669!important;transition:color .1s}#toast{transition:opacity .2s ease}
 /* ── Dark mode overrides ───────────────────────────────────────────── */
 body.dark{background-color:#0f172a;color:#f1f5f9}
@@ -113,9 +101,7 @@ body.dark #theme-toggle:hover{background-color:#334155;color:#f1f5f9}
       <span class="svc-dot h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
       <h2 class="text-base font-semibold">Persistent Agents</h2>
       <span class="agents-count ml-auto text-sm font-medium text-slate-400">loading…</span>
-      <span class="svc-chev text-slate-400 text-xs ml-2 select-none" title="collapse / expand">▾</span>
     </div>
-    <div class="svc-body">
     <div class="rounded-lg border border-slate-200 bg-white overflow-x-auto">
       <table class="w-full text-sm"><thead>
         <tr class="text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
@@ -128,8 +114,6 @@ body.dark #theme-toggle:hover{background-color:#334155;color:#f1f5f9}
         </tr></thead>
         <tbody id="agents-rows"><tr><td colspan="6" class="px-3 py-3 text-slate-400">loading…</td></tr></tbody>
       </table>
-    </div>
-    <p class="text-[11px] text-slate-400 mt-2">tmux sessions running an agent, linked by their <code>--resume</code> session id</p>
     </div>
   </section>
 
@@ -195,14 +179,12 @@ body.dark #theme-toggle:hover{background-color:#334155;color:#f1f5f9}
       <span class="svc-dot h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
       <h2 class="svc-name text-base font-semibold"></h2>
       <span class="svc-state ml-auto text-sm font-medium text-slate-400">loading…</span>
-      <span class="svc-chev text-slate-400 text-xs ml-2 select-none" title="collapse / expand">▾</span>
     </div>
-    <div class="svc-body">
-    <div class="grid grid-cols-3 gap-3 mb-3">
-      <div class="rounded-lg border border-slate-200 bg-white p-3">
-        <p class="text-[11px] uppercase tracking-wide text-slate-400">Uptime</p>
-        <p class="m-uptime text-lg font-semibold mt-0.5">–</p>
-        <p class="text-[11px] text-slate-400">days ≥98% operational</p>
+    <div class="grid grid-cols-6 gap-2 mb-3">
+      <div class="rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0">
+        <p class="text-[10px] uppercase tracking-wide text-slate-400">Uptime</p>
+        <p class="m-uptime truncate text-base font-semibold leading-none mt-1.5">–</p>
+        <p class="text-[10px] text-slate-400 mt-1">current streak</p>
       </div>
       <div class="rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0">
         <p class="text-[10px] uppercase tracking-wide text-slate-400">Availability</p>
@@ -230,7 +212,6 @@ body.dark #theme-toggle:hover{background-color:#334155;color:#f1f5f9}
           <span>now</span>
         </div>
       </div>
-    </div>
     </div>
   </section>
 </template>
@@ -290,7 +271,7 @@ function renderServerHealth(h){
 }
 
 function renderTimeline(root, buckets, windowDays){
-  const tl=q(root,".svc-timeline"); tl.innerHTML=""; const GREEN=98;
+  const tl=q(root,".svc-timeline"); tl.innerHTML=""; const GREEN=99;
   buckets.forEach(b=>{
     const el=document.createElement("div"); let cls,status;
     if(b.uptime_pct==null){cls="bg-slate-200";status="no data";}
@@ -305,10 +286,10 @@ function renderTimeline(root, buckets, windowDays){
 }
 function renderService(root, s){
   const st=STATE[s.state]||STATE.nodata;
-  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 cursor-pointer "+st[3];
+  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 "+st[3];
   q(root,".svc-dot").className="svc-dot h-3 w-3 rounded-full shrink-0 "+st[0];
   const se=q(root,".svc-state"); se.textContent=st[1]; se.className="svc-state ml-auto text-sm font-medium "+st[2];
-  {const gd=(s.timeline||[]).filter(b=>b.uptime_pct!=null&&b.uptime_pct>=98).length;q(root,".m-uptime").textContent=gd+(gd===1?" day":" days");}
+  q(root,".m-uptime").textContent=fmtDuration(s.uptime_seconds);
   q(root,".m-sla").textContent=s.sla!=null?s.sla.toFixed(2)+" %":"–";
   q(root,".m-sla-sub").textContent=s.sla_window_days+"d · "+(s.sla_samples||0)+" samples";
   if(s.metric==="agents"){
@@ -333,7 +314,7 @@ function renderService(root, s){
 function renderAgents(root, agents){
   const tb=document.getElementById("agents-rows");
   const on=agents.some(a=>a.alive); const running=agents.filter(a=>a.alive).length;
-  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 cursor-pointer "+(on?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200");
+  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 "+(on?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200");
   q(root,".svc-dot").className="svc-dot h-3 w-3 rounded-full shrink-0 "+(on?"bg-emerald-500":"bg-slate-300");
   const cnt=q(root,".agents-count");
   cnt.textContent=running?`${running} agent${running===1?"":"s"} running`:"no agents running";
@@ -391,37 +372,17 @@ async function refreshHealth(){
     renderServerHealth(h);
   }catch(e){renderServerHealth(null);}
 }
-// Collapsible blocks. The first OPEN_BY_DEFAULT blocks (agents table + the first service cards)
-// start expanded, the rest fold to their header line; a click on any header toggles it and the
-// choice is remembered per block in localStorage (a long list of modules stays scannable).
-const OPEN_BY_DEFAULT=3;
-const collapseKey=n=>"agentsmon.collapsed:"+n;
-function setCollapsed(root,collapsed,persist){
-  const b=q(root,".svc-body"),c=q(root,".svc-chev"); if(!b) return;
-  b.hidden=collapsed; if(c) c.textContent=collapsed?"▸":"▾"; root.dataset.collapsed=collapsed?"1":"0";
-  if(persist){ try{ localStorage.setItem(collapseKey(root.dataset.cname||""),collapsed?"1":"0"); }catch(e){} }
-}
-function initCollapse(root,name,index){
-  if(root.dataset.cname===name) return;
-  root.dataset.cname=name; let v=null; try{ v=localStorage.getItem(collapseKey(name)); }catch(e){}
-  setCollapsed(root, v==null ? index>=OPEN_BY_DEFAULT : v==="1", false);
-}
-document.addEventListener("click",e=>{
-  const h=e.target.closest(".svc-head"); if(!h||e.target.closest("a,button")) return;
-  const root=h.closest("section"); if(!root) return;
-  setCollapsed(root, root.dataset.collapsed!=="1", true);
-});
 async function refresh(){
   try{
     const d=await (await fetch("/api/state",{credentials:"same-origin"})).json();
-    const agentsRoot=document.querySelector('section[data-svc="agents"]');
-    renderAgents(agentsRoot, d.agents); initCollapse(agentsRoot,"agents",0);
+    renderAgents(document.querySelector('section[data-svc="agents"]'), d.agents);
+    // Server health is rendered by refreshHealth() via its own /api/server-health poll.
     const box=document.getElementById("services"); const tpl=document.getElementById("svc-tpl");
     if(box.childElementCount!==d.services.length){
       box.innerHTML=""; d.services.forEach(()=>box.appendChild(tpl.content.cloneNode(true)));
     }
     const sections=box.querySelectorAll("section");
-    d.services.forEach((s,i)=>{ const root=sections[i]; q(root,".svc-name").textContent=s.name; renderService(root,s); initCollapse(root,s.name,i+1); });
+    d.services.forEach((s,i)=>{ const root=sections[i]; q(root,".svc-name").textContent=s.name; renderService(root,s); });
     document.getElementById("footer").textContent="updated "+new Date().toLocaleTimeString()+" · auto-refresh";
   }catch(e){document.getElementById("footer").textContent="connection lost…";}
 }
@@ -457,7 +418,7 @@ document.addEventListener("click", async e=>{
   showToast((act==="restart"?"↻ Restarting ":"✕ Stopping ")+name+"…");
   try{
     const r=await fetch("/api/agent/action",{method:"POST",credentials:"same-origin",
-      headers:{"Content-Type":"application/json","X-Agentsmon":"action"},body:JSON.stringify({name,action:act})});
+      headers:{"Content-Type":"application/json","X-Requested-With":"agentsmon"},body:JSON.stringify({name,action:act})});
     const j=await r.json().catch(()=>({}));
     showToast((j&&j.ok?"✓ ":"⚠ ")+((j&&j.message)||(r.ok?"done":"failed")));
   }catch(err){ showToast("⚠ "+err); }
@@ -669,8 +630,7 @@ def _service_state(cfg: dict, running_agents: int = 0) -> list[dict]:
             "avg_latency_ms": (lambda a: round(a * 1000) if a is not None else None)(db.avg_latency(name, win_days * 86400)),
             "health_url": s.get("health_url"),
             "metric": metric, "metric_value": running_agents if metric == "agents" else None,
-            "metric_sub": s.get("latency_label", "module" if s.get("command") else "health check"),
-            "source": s.get("source", "config"),
+            "metric_sub": s.get("latency_label", "health check"),
             "uptime_seconds": db.uptime_seconds(name, min_outage),
             "sla": sla_pct, "sla_window_days": win_days, "sla_samples": samples,
             "timeline": db.timeline(name, tdays * 86400, tdays), "timeline_days": tdays,
@@ -701,13 +661,6 @@ def _agents_state(cfg: dict) -> list[dict]:
             a["vendor"] = ov["vendor"]
         if ov.get("restart"):
             a["resume_cmd"] = ov["restart"]
-            # A freshly re-exec'd agent often drops the id from its argv, so detection finds
-            # nothing and the column showed "— none" even though we know the id: it is right
-            # there in the configured resume command (reported 2026-09-01).
-            if not a.get("session_id"):
-                m = detect.UUID_RE.search(ov["restart"])
-                if m:
-                    a["session_id"] = m.group(0)
     agents = detect.pinned_agents(cfg.get("pinned_daemons", [])) + tmux
     # Telegram deep-link icon. Two sources, explicit wins:
     #  1) an explicit `telegram` field on an agent/daemon config entry (for daemons with their OWN
@@ -837,26 +790,6 @@ def _probe_loop(stop: threading.Event) -> None:
         stop.wait(int(pcfg.get("interval_seconds", 60)))
 
 
-_STATIC_TAILWIND = (Path(__file__).parent / "static" / "tailwind.js").read_bytes()
-
-
-def _loopback(host: str) -> bool:
-    return host in ("127.0.0.1", "localhost", "::1")
-
-
-def require_auth_or_die(host: str, cfg: dict) -> None:
-    """Fail closed: a dashboard reachable from anything but loopback must have HTTP auth
-    configured (audit 2026-09-08). Without it anyone on that network could stop or restart
-    agents. `agentsmon wizard` sets dashboard.auth; loopback-only installs stay optional."""
-    auth = cfg.get("dashboard", {}).get("auth") or {}
-    if _loopback(host) or (auth.get("user") and auth.get("pwhash")):
-        return
-    raise SystemExit(
-        f"refusing to listen on {host} without dashboard.auth (user + pwhash) in the config — "
-        "the page can stop and restart agents. Bind 127.0.0.1 or set the password via `agentsmon wizard`."
-    )
-
-
 def serve(host: str, port: int) -> None:
     # Bring an older config up to the current schema on startup (e.g. fold per-daemon availability
     # cards into the synthetic Multi-Agent System card). The dashboard restarts on every update,
@@ -869,7 +802,6 @@ def serve(host: str, port: int) -> None:
     except Exception:
         pass
     cfg = config.load()
-    require_auth_or_die(host, cfg)
     poll = cfg.get("dashboard", {}).get("poll_seconds", 15)
     page = PAGE.replace("POLL", str(poll)).encode()
     auth = cfg.get("dashboard", {}).get("auth") or {}
@@ -903,13 +835,6 @@ def serve(host: str, port: int) -> None:
                 body = page
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
-            elif self.path == "/static/tailwind.js":
-                # Served from the package, not cdn.tailwindcss.com: a third party that can change
-                # a script running on this origin could drive the control endpoint (audit 2026-09-08).
-                body = _STATIC_TAILWIND
-                self.send_response(200)
-                self.send_header("Content-Type", "application/javascript; charset=utf-8")
-                self.send_header("Cache-Control", "public, max-age=86400")
             else:
                 self.send_response(404)
                 self.end_headers()
@@ -928,8 +853,14 @@ def serve(host: str, port: int) -> None:
                 self.send_response(404)
                 self.end_headers()
                 return
-            if not _action_allowed(self.headers):
-                body = json.dumps({"ok": False, "error": "missing X-Agentsmon header (cross-site request?)"}).encode()
+            # CSRF guard: require a custom header our own page sends. A cross-site HTML
+            # form/img can carry the browser's cached Basic-auth creds, but cannot set a
+            # custom header without a CORS preflight this server never approves. We also
+            # reject the form content-types a simple cross-site POST is limited to.
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            form_types = ("application/x-www-form-urlencoded", "multipart/form-data", "text/plain")
+            if self.headers.get("X-Requested-With") != "agentsmon" or ctype in form_types:
+                body = json.dumps({"ok": False, "error": "forbidden (CSRF check failed)"}).encode()
                 self.send_response(403)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
@@ -969,19 +900,4 @@ def serve(host: str, port: int) -> None:
     except OSError:
         pass
     print(f"Agents Monitoring dashboard → http://{host}:{port}  (Ctrl-C to stop)")
-    write_pidfile()
     ThreadingHTTPServer((host, port), Handler).serve_forever()
-
-
-def pidfile_path():
-    return config.state_dir() / "dashboard.pid"
-
-
-def write_pidfile() -> None:
-    """Record our PID so the installer can stop exactly this process. It used to
-    ``pkill -f "agentsmon dashboard"``, which also killed any shell whose command line merely
-    mentioned that string — including the script that was running the install (2026-09-04)."""
-    try:
-        pidfile_path().write_text(str(os.getpid()), encoding="utf-8")
-    except OSError:
-        pass

@@ -21,6 +21,3 @@ agentsmon = "agentsmon.__main__:main"
 
 [tool.setuptools]
 packages = ["agentsmon"]
-
-[tool.setuptools.package-data]
-agentsmon = ["static/*.js"]
