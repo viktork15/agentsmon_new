@@ -60,6 +60,9 @@ class DashboardTemplate(unittest.TestCase):
         # every poll) must not drift back to the larger mb-3.
         self.assertNotIn("svc-head flex items-center gap-2.5 mb-3", SRC)
 
+    def test_agents_table_has_no_explanatory_caption(self):
+        self.assertNotIn("tmux sessions running an agent", SRC)
+
     def test_server_health_and_dark_mode_survive(self):
         self.assertIn('data-svc="server-health"', SRC)
         self.assertIn("body.dark", SRC)
