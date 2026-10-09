@@ -785,6 +785,9 @@ def display_model(model: str | None) -> str | None:
     m = re.fullmatch(r"gpt-(\d+(?:\.\d+)?)((?:-[a-z0-9]+)*)", model, re.IGNORECASE)
     if m:
         return "GPT-" + m.group(1) + "".join(" " + w.capitalize() for w in m.group(2).split("-") if w)
+    m = re.fullmatch(r"gemini-(\d+(?:\.\d+)?)((?:-[a-z0-9]+)*)", model, re.IGNORECASE)
+    if m:
+        return "Gemini " + m.group(1) + "".join(" " + w.capitalize() for w in m.group(2).split("-") if w)
     m = re.fullmatch(r"(o\d+)((?:-[a-z0-9]+)*)", model, re.IGNORECASE)
     if m:
         return m.group(1).lower() + "".join(" " + w.capitalize() for w in m.group(2).split("-") if w)

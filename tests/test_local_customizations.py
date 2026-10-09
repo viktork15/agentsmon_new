@@ -19,6 +19,10 @@ class ModelLabels(unittest.TestCase):
                           "openai/gpt-5.7-pro": "GPT-5.7 Pro", "o3-pro": "o3 Pro"}.items():
             self.assertEqual(detect.display_model(raw), want)
 
+    def test_newer_gpt_and_gemini_ids_are_formatted(self):
+        self.assertEqual(detect.display_model("gpt-6.1-sol"), "GPT-6.1 Sol")
+        self.assertEqual(detect.display_model("gemini-3.5-flash"), "Gemini 3.5 Flash")
+
     def test_ciri_daemon_uses_the_hermes_model_lookup(self):
         orig = detect._hermes_model
         detect._hermes_model = lambda: "gpt-5.5"
@@ -37,6 +41,24 @@ class DashboardTemplate(unittest.TestCase):
         # A merge once left the agents section's svc-body wrapper unclosed.
         h = self._html()
         self.assertEqual(len(re.findall(r"<div\b", h)), len(re.findall(r"</div>", h)))
+
+    def test_service_cards_keep_the_compact_one_row_layout(self):
+        tpl = SRC[SRC.index('<template id="svc-tpl">'):SRC.index("</template>")]
+        self.assertIn("grid-cols-6", tpl)
+        self.assertNotIn("grid-cols-3 gap-3", tpl)
+        self.assertIn("svc-body", tpl)          # ...and stays collapsible
+
+    def test_server_health_is_collapsible(self):
+        sec = SRC[SRC.index('data-svc="server-health"'):SRC.index('<div id="services">')]
+        self.assertIn("svc-head", sec)
+        self.assertIn("svc-chev", sec)
+        self.assertIn('<div class="svc-body">', sec)
+        self.assertIn('initCollapse(root,"server-health"', SRC)
+
+    def test_every_section_header_uses_the_same_small_gap(self):
+        # Server Health uses mb-2 under its header; the agents/service headers (rewritten by JS on
+        # every poll) must not drift back to the larger mb-3.
+        self.assertNotIn("svc-head flex items-center gap-2.5 mb-3", SRC)
 
     def test_server_health_and_dark_mode_survive(self):
         self.assertIn('data-svc="server-health"', SRC)

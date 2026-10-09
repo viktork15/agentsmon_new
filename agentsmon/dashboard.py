@@ -134,11 +134,13 @@ body.dark #theme-toggle:hover{background-color:#334155;color:#f1f5f9}
   </section>
 
   <section class="mb-4" data-svc="server-health">
-    <div class="server-health-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 bg-white border-slate-200">
+    <div class="svc-head server-health-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 cursor-pointer bg-white border-slate-200">
       <span class="server-health-dot h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
       <h2 class="text-base font-semibold">Server Health</h2>
       <span class="server-health-state ml-auto text-sm font-medium text-slate-400">loading…</span>
+      <span class="svc-chev text-slate-400 text-xs ml-2 select-none" title="collapse / expand">▾</span>
     </div>
+    <div class="svc-body">
     <div id="server-health-cards" class="grid grid-cols-6 gap-2 mb-3">
       <div class="health-card rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0" data-health-card="cpu">
         <div class="flex items-center justify-between gap-1.5">
@@ -183,6 +185,7 @@ body.dark #theme-toggle:hover{background-color:#334155;color:#f1f5f9}
         <p class="health-sub truncate text-[10px] text-slate-400 mt-1">–</p>
       </div>
     </div>
+    </div>
   </section>
 
   <div id="services"></div>
@@ -198,11 +201,11 @@ body.dark #theme-toggle:hover{background-color:#334155;color:#f1f5f9}
       <span class="svc-chev text-slate-400 text-xs ml-2 select-none" title="collapse / expand">▾</span>
     </div>
     <div class="svc-body">
-    <div class="grid grid-cols-3 gap-3 mb-3">
-      <div class="rounded-lg border border-slate-200 bg-white p-3">
-        <p class="text-[11px] uppercase tracking-wide text-slate-400">Uptime</p>
-        <p class="m-uptime text-lg font-semibold mt-0.5">–</p>
-        <p class="text-[11px] text-slate-400">days ≥98% operational</p>
+    <div class="grid grid-cols-6 gap-2 mb-3">
+      <div class="rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0">
+        <p class="text-[10px] uppercase tracking-wide text-slate-400">Uptime</p>
+        <p class="m-uptime truncate text-base font-semibold leading-none mt-1.5">–</p>
+        <p class="text-[10px] text-slate-400 mt-1">current streak</p>
       </div>
       <div class="rounded-lg border border-slate-200 bg-white px-2.5 py-2 min-w-0">
         <p class="text-[10px] uppercase tracking-wide text-slate-400">Availability</p>
@@ -219,8 +222,8 @@ body.dark #theme-toggle:hover{background-color:#334155;color:#f1f5f9}
           <h3 class="text-[10px] uppercase tracking-wide font-medium text-slate-400">Availability history</h3>
           <span class="svc-tl-window text-[10px] text-slate-400"></span>
         </div>
-        <div class="svc-timeline flex items-end gap-[2px] h-7"></div>
-        <div class="flex items-center justify-between mt-1.5 text-[10px] text-slate-400">
+        <div class="svc-timeline flex items-end gap-[2px] h-5"></div>
+        <div class="flex items-center justify-between mt-[5px] text-[10px] text-slate-400">
           <span class="svc-tl-start"></span>
           <div class="flex items-center gap-2">
             <span class="flex items-center gap-1"><span class="h-1.5 w-1.5 rounded-sm bg-emerald-500"></span>Operational</span>
@@ -276,8 +279,9 @@ function setCard(kind, value, sub, percent, history, historyMax){
 }
 function renderServerHealth(h){
   const root=document.querySelector('section[data-svc="server-health"]'); if(!root) return;
+  initCollapse(root,"server-health",1);
   const ok=h && h.status==="operational";
-  q(root,".server-health-head").className="server-health-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 "+(ok?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200");
+  q(root,".server-health-head").className="svc-head server-health-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 cursor-pointer "+(ok?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200");
   q(root,".server-health-dot").className="server-health-dot h-3 w-3 rounded-full shrink-0 "+(ok?"bg-emerald-500":"bg-slate-300");
   const st=q(root,".server-health-state"); st.textContent=ok?"Operational":"No data"; st.className="server-health-state ml-auto text-sm font-medium "+(ok?"text-emerald-600":"text-slate-400");
   if(!h) return;
@@ -305,7 +309,7 @@ function renderTimeline(root, buckets, windowDays){
 }
 function renderService(root, s){
   const st=STATE[s.state]||STATE.nodata;
-  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 cursor-pointer "+st[3];
+  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 cursor-pointer "+st[3];
   q(root,".svc-dot").className="svc-dot h-3 w-3 rounded-full shrink-0 "+st[0];
   const se=q(root,".svc-state"); se.textContent=st[1]; se.className="svc-state ml-auto text-sm font-medium "+st[2];
   {const gd=(s.timeline||[]).filter(b=>b.uptime_pct!=null&&b.uptime_pct>=98).length;q(root,".m-uptime").textContent=gd+(gd===1?" day":" days");}
@@ -333,7 +337,7 @@ function renderService(root, s){
 function renderAgents(root, agents){
   const tb=document.getElementById("agents-rows");
   const on=agents.some(a=>a.alive); const running=agents.filter(a=>a.alive).length;
-  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 cursor-pointer "+(on?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200");
+  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-2 rounded-lg border px-3 py-2 cursor-pointer "+(on?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200");
   q(root,".svc-dot").className="svc-dot h-3 w-3 rounded-full shrink-0 "+(on?"bg-emerald-500":"bg-slate-300");
   const cnt=q(root,".agents-count");
   cnt.textContent=running?`${running} agent${running===1?"":"s"} running`:"no agents running";
